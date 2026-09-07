@@ -1,0 +1,7 @@
+name: type-battle
+logger:
+  level: INFO
+runtime:
+  js_entrypoint: index.js
+session:
+  token_expiry_sec: 7200
