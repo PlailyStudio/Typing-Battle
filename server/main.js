@@ -64,7 +64,7 @@ var createBattle = function (ctx, logger, nk, payload) {
     for (var attempt = 0; attempt < 10; attempt++) {
       var code = String(Math.floor(100000 + Math.random() * 900000));
       try {
-    var id = nk.matchCreate('battle', { duration: duration, gameMode: p.gameMode === 'race' ? 'race' : 'timed', customText: p.customText, sentenceOrder: p.sentenceOrder === 'sequential' ? 'sequential' : 'random', code: code, host: ctx.userId, language: p.language === 'en' ? 'en' : 'ko', title: String(p.title || '함께 달리는 60초').slice(0, 30), max: Math.max(2, Math.min(4, Math.floor(Number(p.max) || 4))) });
+    var id = nk.matchCreate('battle', { duration: duration, gameMode: p.gameMode === 'race' ? 'race' : 'timed', customText: p.customText, sentenceOrder: p.sentenceOrder === 'sequential' ? 'sequential' : 'random', code: code, host: ctx.userId, language: p.language === 'en' ? 'en' : 'ko', title: String(p.title || '즐거운 타자배틀').slice(0, 30), max: Math.max(2, Math.min(4, Math.floor(Number(p.max) || 4))) });
     return JSON.stringify({ matchId: id, code: code });
       } catch (e) { if (attempt === 9) throw e; }
     }

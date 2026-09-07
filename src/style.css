@@ -117,10 +117,10 @@ main:has(.opponent){max-width:1600px}
 .single-layout #launch-form>.full-width,.single-layout #duration-setting,.single-row{grid-column:1/-1}.single-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:28px}.single-row>.form-field{min-width:0}@media(max-width:600px){.single-row{gap:12px}}
 
 #language:disabled{color:#999;background:#f5f5f5;border-color:#e7e7e7;cursor:not-allowed;opacity:1;-webkit-text-fill-color:#999}
-.personal-settings #sound-enabled,.personal-settings #sound-volume{display:block;width:min(100%,320px)}
+.personal-settings #sound-enabled,.personal-settings #sound-volume{display:block;width:min(100%,280px)}
 .personal-settings #sound-volume{padding:0;min-height:28px;accent-color:#444;box-shadow:none}
 #sound-level{margin-left:8px;color:#888;font-size:13px}
-.personal-settings #music-enabled,.personal-settings #music-volume{display:block;width:min(100%,320px)}
+.personal-settings #music-enabled,.personal-settings #music-volume{display:block;width:min(100%,280px)}
 .personal-settings #music-volume{padding:0;min-height:28px;accent-color:#444;box-shadow:none}
 #music-level{margin-left:8px;color:#888;font-size:13px}
 
@@ -139,5 +139,6 @@ main:has(.opponent){max-width:1600px}
 #self-progress .race-progress-label strong{font-size:13px}
 .match-strip>#rank{text-align:right}
 .personal-settings #next-mode{display:block;width:min(100%,440px)}
-.audio-settings{display:flex;gap:28px;overflow-x:auto;padding-bottom:4px}
-.audio-setting{flex:0 0 320px;max-width:100%}
+.audio-settings{display:flex;gap:20px;max-width:100%;min-width:0;padding-bottom:4px}
+.audio-setting{flex:0 1 280px;min-width:0;max-width:100%}
+.lobby-layout>.panel,.personal-settings{min-width:0}

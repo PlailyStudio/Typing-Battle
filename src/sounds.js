@@ -1,4 +1,5 @@
 const NOTES = {
+  ui: [[600, 0, 0.035, 0.18]],
   type: [[700, 0, 0.025, 0.6]],
   error: [[170, 0, 0.07, 0.2]],
   complete: [[660, 0, 0.09, 0.25], [880, 0.07, 0.12, 0.25]],
@@ -8,14 +9,15 @@ const NOTES = {
 };
 
 /** Small synthesized effects; no downloads, and audio never blocks game input. */
-export function createSounds({ enabled = true, volume = 0.8, createContext = () => {
+export function createSounds({ enabled = true, volume = 1, createContext = () => {
   const Audio = window.AudioContext || window.webkitAudioContext;
   return Audio ? new Audio() : null;
 } } = {}) {
   let context, master, phase = '', round = null, count = null;
   const voices = new Set();
+  const boundRoots = new WeakSet();
   const setVolume = value => {
-    volume = Number.isFinite(Number(value)) ? Math.max(0, Math.min(1.5, Number(value))) : 0.8;
+    volume = Number.isFinite(Number(value)) ? Math.max(0, Math.min(2, Number(value))) : 1;
     if (master) master.gain.value = enabled ? volume : 0;
   };
   setVolume(volume);
@@ -51,6 +53,34 @@ export function createSounds({ enabled = true, volume = 0.8, createContext = () 
   };
   return {
     unlock, play, setVolume,
+    bindUI(root) {
+      if (boundRoots.has(root)) return;
+      boundRoots.add(root);
+      const click = () => { unlock(); play('ui'); };
+      const control = event => {
+        const node = event.target.closest?.('button, a, summary, select, input, textarea');
+        return node && !node.disabled && node.id !== 'typing' ? node : null;
+      };
+      root.addEventListener('click', event => {
+        const node = control(event);
+        if (node && node.tagName !== 'SELECT' && node.type !== 'range') click();
+      }, true);
+      root.addEventListener('pointerdown', event => {
+        if (control(event)?.tagName === 'SELECT' && event.button === 0) click();
+      }, true);
+      root.addEventListener('keydown', event => {
+        if (control(event)?.tagName === 'SELECT' && !event.repeat && ['Enter', ' ', 'ArrowDown', 'ArrowUp'].includes(event.key)) click();
+      }, true);
+      root.addEventListener('change', event => {
+        const node = control(event);
+        if (node && (node.tagName === 'SELECT' || node.type === 'range' || node.type === 'checkbox')) click();
+      });
+      root.addEventListener('input', event => {
+        const node = control(event);
+        if (node && node.tagName !== 'SELECT' && node.type !== 'range'
+          && !['nickname', 'lobby-nickname'].includes(node.id)) click();
+      });
+    },
     setEnabled(value) {
       enabled = !!value; setVolume(volume);
       if (!enabled) for (const voice of voices) { try { voice.stop(); } catch {} }

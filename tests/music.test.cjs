@@ -3,22 +3,26 @@ const assert = require('node:assert/strict');
 
 async function fixture() {
   const { createMusic } = await import('../src/music.js');
-  const voices = [], timers = new Map();
+  const voices = [], timers = new Map(), gains = [];
   let created = 0, serial = 0;
   const param = () => ({ value: 0, setValueAtTime(v) { this.value = v; }, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {}, cancelScheduledValues() {}, setTargetAtTime(v) { this.value = v; } });
   const context = { currentTime: 0, state: 'running', destination: {},
-    createGain() { return { gain: param(), connect() {}, disconnect() {} }; },
+    createGain() { const node = { gain: param(), connect() {}, disconnect() {} }; gains.push(node); return node; },
     createOscillator() { const voice = { frequency: param(), connect() {}, disconnect() {}, start(at) { this.at = at; }, stop(at) { this.end = at; } }; voices.push(voice); return voice; }
   };
   const music = createMusic({ createContext: () => { created++; return context; },
     schedule(fn) { timers.set(++serial, fn); return serial; }, cancel(id) { timers.delete(id); } });
-  return { music, voices, context, timers, created: () => created, tick() { for (const fn of timers.values()) fn(); } };
+  return { music, voices, context, timers, gains, created: () => created, tick() { for (const fn of timers.values()) fn(); } };
 }
 
 test('음악은 입력 후 시작하고 반복 입력·화면 갱신에 중복되지 않는다', async () => {
   const f = await fixture();
   f.music.setPaused(false); f.music.setScene('lobby'); assert.equal(f.created(), 0);
   f.music.unlock(); const count = f.voices.length;
+  assert.equal(f.gains[0].gain.value, 1);
+  f.music.setVolume(1.2); assert.equal(f.gains[0].gain.value, 1.2);
+  f.music.setVolume(3); assert.equal(f.gains[0].gain.value, 2);
+  f.music.setVolume(NaN); assert.equal(f.gains[0].gain.value, 1);
   assert.ok(count > 0);
   for (let i = 0; i < 100; i++) { f.music.unlock(); f.music.setScene('lobby'); }
   assert.equal(f.voices.length, count); assert.equal(f.created(), 1); assert.equal(f.timers.size, 1);

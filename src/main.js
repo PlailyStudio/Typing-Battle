@@ -11,15 +11,16 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<'
 const saved = (key, fallback = '') => { try { return localStorage.getItem(key) || fallback; } catch { return fallback; } };
 const save = (key, value) => { try { localStorage.setItem(key, value); } catch {} };
 let soundEnabled = saved('tb-sound-enabled', 'true') !== 'false';
-let soundVolume = Number(saved('tb-sound-volume', '80'));
-if (!Number.isFinite(soundVolume)) soundVolume = 80;
-soundVolume = Math.max(0, Math.min(150, soundVolume));
+let soundVolume = Number(saved('tb-sound-volume', '100'));
+if (!Number.isFinite(soundVolume)) soundVolume = 100;
+soundVolume = Math.max(0, Math.min(200, soundVolume));
 const sounds = createSounds({ enabled: soundEnabled, volume: soundVolume / 100 });
 window.addEventListener('pointerdown', sounds.unlock, { capture: true });
 window.addEventListener('keydown', sounds.unlock, { capture: true });
+sounds.bindUI(document);
 let musicEnabled = saved('tb-music-enabled', 'true') !== 'false';
-let musicVolume = Number(saved('tb-music-volume', '80'));
-musicVolume = Number.isFinite(musicVolume) ? Math.max(0, Math.min(150, musicVolume)) : 80;
+let musicVolume = Number(saved('tb-music-volume', '100'));
+musicVolume = Number.isFinite(musicVolume) ? Math.max(0, Math.min(200, musicVolume)) : 100;
 const music = createMusic({ enabled: musicEnabled, volume: musicVolume / 100 });
 window.addEventListener('pointerdown', music.unlock, { capture: true });
 window.addEventListener('keydown', music.unlock, { capture: true });
@@ -74,26 +75,25 @@ function syncLanguageControl() {
 }
 function addPersonalSettings(container) {
   container.insertAdjacentHTML('beforeend', '<details class="personal-settings"><summary>개인 설정</summary></details>');
-  $('.personal-settings').insertAdjacentHTML('beforeend', `<label for="next-mode">문장 전환 방식</label><select id="next-mode"><option value="input" ${!autoNext ? 'selected' : ''}>Enter 또는 문자·공백 추가 입력으로 다음 문장</option><option value="auto" ${autoNext ? 'selected' : ''}>정확히 입력하면 자동으로 다음 문장</option></select>`);
+  $('.personal-settings').insertAdjacentHTML('beforeend', `<label for="next-mode">문장 전환 방식</label><select id="next-mode"><option value="input" ${!autoNext ? 'selected' : ''}>문장 완성 후 추가 입력으로 다음 문장</option><option value="auto" ${autoNext ? 'selected' : ''}>문장 완성 후 자동으로 다음 문장</option></select>`);
   $('#next-mode').onchange = event => {
     autoNext = event.target.value === 'auto';
     save('tb-next-mode', autoNext ? 'auto' : 'input');
     if (autoNext && self?.waiting) submitInput(true);
     if (room) refresh();
   };
-  $('.personal-settings').insertAdjacentHTML('beforeend', `<label for="sound-enabled">효과음</label><select id="sound-enabled"><option value="on" ${soundEnabled ? 'selected' : ''}>켜기</option><option value="off" ${!soundEnabled ? 'selected' : ''}>끄기</option></select><label for="sound-volume">효과음 크기 <output id="sound-level">${soundVolume}%</output></label><input id="sound-volume" type="range" min="0" max="150" step="5" value="${soundVolume}" ${soundEnabled ? '' : 'disabled'}>`);
+  $('.personal-settings').insertAdjacentHTML('beforeend', `<label for="sound-enabled">효과음</label><select id="sound-enabled"><option value="on" ${soundEnabled ? 'selected' : ''}>켜기</option><option value="off" ${!soundEnabled ? 'selected' : ''}>끄기</option></select><label for="sound-volume">효과음 크기 <output id="sound-level">${soundVolume}%</output></label><input id="sound-volume" type="range" min="0" max="200" step="5" value="${soundVolume}" ${soundEnabled ? '' : 'disabled'}>`);
   $('#sound-enabled').onchange = event => {
     soundEnabled = event.target.value === 'on';
     save('tb-sound-enabled', String(soundEnabled)); sounds.setEnabled(soundEnabled);
     $('#sound-volume').disabled = !soundEnabled;
-    if (soundEnabled) { sounds.unlock(); sounds.play('type'); }
+    if (soundEnabled) sounds.unlock();
   };
   $('#sound-volume').oninput = event => {
     soundVolume = Number(event.target.value); save('tb-sound-volume', String(soundVolume));
     $('#sound-level').textContent = `${soundVolume}%`; sounds.setVolume(soundVolume / 100); sounds.unlock();
   };
-  $('#sound-volume').onchange = () => sounds.play('complete');
-  $('.personal-settings').insertAdjacentHTML('beforeend', `<label for="music-enabled">배경음악</label><select id="music-enabled"><option value="on" ${musicEnabled ? 'selected' : ''}>켜기</option><option value="off" ${!musicEnabled ? 'selected' : ''}>끄기</option></select><label for="music-volume">배경음악 크기 <output id="music-level">${musicVolume}%</output></label><input id="music-volume" type="range" min="0" max="150" step="5" value="${musicVolume}" ${musicEnabled ? '' : 'disabled'}>`);
+  $('.personal-settings').insertAdjacentHTML('beforeend', `<label for="music-enabled">배경음악</label><select id="music-enabled"><option value="on" ${musicEnabled ? 'selected' : ''}>켜기</option><option value="off" ${!musicEnabled ? 'selected' : ''}>끄기</option></select><label for="music-volume">배경음악 크기 <output id="music-level">${musicVolume}%</output></label><input id="music-volume" type="range" min="0" max="200" step="5" value="${musicVolume}" ${musicEnabled ? '' : 'disabled'}>`);
   $('#music-enabled').onchange = event => {
     musicEnabled = event.target.value === 'on';
     save('tb-music-enabled', String(musicEnabled)); music.setEnabled(musicEnabled);
@@ -118,14 +118,35 @@ function addPersonalSettings(container) {
 function home() {
   sounds.reset();
   music.setScene('lobby');
-  frame(`<section class="launch"><div class="tabs" role="tablist" aria-label="플레이 모드">${[['single', '싱글플레이'], ['create', '방 생성'], ['join', '방 참가']].map(([id, label]) => `<button role="tab" aria-selected="${tab === id}" data-tab="${id}" class="${tab === id ? 'active' : ''}">${label}</button>`).join('')}</div><form id="launch-form"><label for="nickname">닉네임</label><input id="nickname" placeholder="닉네임을 입력해주세요." maxlength="12" value="${esc(nickname)}" autocomplete="off">${tab === 'create' ? '<div class="form-row"><div><label for="room-title">방 이름</label><input id="room-title" maxlength="30" value="함께 달리는 60초" required></div><div><label for="capacity">최대 인원</label><select id="capacity"><option value="2">2명</option><option value="3">3명</option><option value="4" selected>4명</option></select></div></div>' : tab === 'join' ? `<label for="room-code">참가 코드</label><input id="room-code" required inputmode="numeric" maxlength="6" pattern="[0-9]{6}" placeholder="숫자 6자리" value="${esc(pendingInviteCode)}" autocomplete="off">` : ''}${tab !== 'join' ? `<label for="language">언어</label><select id="language"><option value="ko" ${language === 'ko' ? 'selected' : ''}>한국어</option><option value="en" ${language === 'en' ? 'selected' : ''}>영어</option></select>` : ''}<p id="form-error" class="error" role="alert">${esc(error)}</p><button class="primary launch-button" ${busy ? 'disabled' : ''}>${busy ? '연결 중…' : tab === 'single' ? '시작' : tab === 'create' ? '방 만들기' : '참가'} </button></form></section>`);
+  frame(`<section class="launch"><div class="tabs" role="tablist" aria-label="플레이 모드">${[['single', '싱글플레이'], ['create', '방 생성'], ['join', '방 참가']].map(([id, label]) => `<button role="tab" aria-selected="${tab === id}" data-tab="${id}" class="${tab === id ? 'active' : ''}">${label}</button>`).join('')}</div><form id="launch-form"><label for="nickname">닉네임</label><input id="nickname" placeholder="닉네임을 입력해주세요." maxlength="12" value="${esc(nickname)}" autocomplete="off">${tab === 'create' ? '<div class="form-row"><div><label for="room-title">방 이름</label><input id="room-title" maxlength="30" value="즐거운 타자배틀" required></div><div><label for="capacity">최대 인원</label><select id="capacity"><option value="2">2명</option><option value="3">3명</option><option value="4" selected>4명</option></select></div></div>' : tab === 'join' ? `<label for="room-code">참가 코드</label><input id="room-code" required inputmode="numeric" maxlength="6" pattern="[0-9]{6}" placeholder="숫자 6자리" value="${esc(pendingInviteCode)}" autocomplete="off">` : ''}${tab !== 'join' ? `<label for="language">언어</label><select id="language"><option value="ko" ${language === 'ko' ? 'selected' : ''}>한국어</option><option value="en" ${language === 'en' ? 'selected' : ''}>영어</option></select>` : ''}<p id="form-error" class="error" role="alert">${esc(error)}</p><button class="primary launch-button" ${busy ? 'disabled' : ''}>${busy ? '연결 중…' : tab === 'single' ? '시작' : tab === 'create' ? '방 만들기' : '참가'} </button></form></section>`);
   document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { nickname = $('#nickname').value; tab = b.dataset.tab; error = ''; home(); });
   addPersonalSettings($('#launch-form'));
   if ($('#language')) $('#language').onchange = e => { language = e.target.value; };
   if (tab !== 'join') {
     $('#form-error').insertAdjacentHTML('beforebegin', `<label for="game-mode">경기 방식</label><select id="game-mode"><option value="race" ${gameMode === 'race' ? 'selected' : ''}>완주 · 전체 문장 입력</option><option value="timed" ${gameMode === 'timed' ? 'selected' : ''}>시간 제한</option></select><div id="duration-setting" ${gameMode === 'race' ? 'hidden' : ''}><label for="duration">제한 시간 (초)</label><input id="duration" type="number" min="1" max="3600" step="1" value="${esc(duration)}" ${gameMode === 'race' ? 'disabled' : 'required'}></div><label for="sentence-source">문장</label><select id="sentence-source"><option value="default" ${sentenceSource === 'default' ? 'selected' : ''}>기본 문장</option><option value="custom" ${sentenceSource === 'custom' ? 'selected' : ''}>직접 입력</option></select><div id="custom-editor" ${sentenceSource === 'custom' ? '' : 'hidden'}><label for="custom-text">사용할 문장</label><textarea id="custom-text" rows="6" maxlength="10000" aria-describedby="custom-help" placeholder="한 줄에 한 문장씩 입력해주세요.">${esc(customText)}</textarea><p id="custom-help" class="custom-help">줄바꿈마다 한 문장 · 빈 줄 제외 · 최대 50문장, 한 문장 160자</p></div><label for="sentence-order">출제 순서</label><select id="sentence-order"><option value="sequential" ${sentenceOrder === 'sequential' ? 'selected' : ''}>순서대로</option><option value="random" ${sentenceOrder === 'random' ? 'selected' : ''}>무작위</option></select>`);
     $('#game-mode').onchange = e => { gameMode = e.target.value; $('#duration-setting').hidden = gameMode === 'race'; $('#duration').disabled = gameMode === 'race'; $('#duration').required = gameMode !== 'race'; };
-    $('#duration').oninput = e => { duration = e.target.value; };
+    const durationInput = $('#duration');
+    durationInput.type = 'text';
+    durationInput.inputMode = 'numeric';
+    durationInput.pattern = '[0-9]+';
+    durationInput.onbeforeinput = event => {
+      if (event.inputType?.startsWith('insert') && event.data && /[^0-9]/.test(event.data)) event.preventDefault();
+    };
+    durationInput.oninput = () => {
+      const text = durationInput.value, cursor = durationInput.selectionStart;
+      const digits = text.replace(/[^0-9]/g, '');
+      if (digits !== text) {
+        durationInput.value = digits;
+        const position = text.slice(0, cursor).replace(/[^0-9]/g, '').length;
+        durationInput.setSelectionRange(position, position);
+      }
+      duration = digits;
+    };
+    durationInput.onkeydown = event => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      durationInput.blur();
+    };
     $('#sentence-source').onchange = e => { sentenceSource = e.target.value; $('#custom-editor').hidden = sentenceSource !== 'custom'; syncLanguageControl(); $('#form-error').textContent = ''; };
     $('#sentence-order').onchange = e => { sentenceOrder = e.target.value; };
     $('#custom-text').oninput = e => { customText = e.target.value; $('#form-error').textContent = ''; };
@@ -159,7 +180,7 @@ function home() {
     $('#game-mode option[value="race"]').textContent = '완주';
   }
   syncLanguageControl();
-  setupNicknameInput($('#nickname'));
+  setupNicknameInput($('#nickname'), { blurOnEnter: true });
   $('#launch-form').onsubmit = launch;
 }
 function setupNicknameInput(input, options = {}) {
@@ -169,7 +190,11 @@ function setupNicknameInput(input, options = {}) {
   hint.setAttribute('role', 'status');
   input.setAttribute('aria-describedby', hint.id);
   (input.closest('.lobby-profile-row') || input).after(hint);
-  bindNicknameInput(input, { ...options, showError: message => { hint.textContent = message; } });
+  let previousName = input.value;
+  bindNicknameInput(input, { ...options, onChange: () => {
+    if (input.value !== previousName) { previousName = input.value; sounds.unlock(); sounds.play('ui'); }
+    options.onChange?.();
+  }, showError: message => { hint.textContent = message; } });
 }
 async function launch(e) {
   e.preventDefault(); if (busy) return;

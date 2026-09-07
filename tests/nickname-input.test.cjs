@@ -84,13 +84,14 @@ test('12번째 한글은 끝까지 조합하고 초과 음절은 제거한다', 
   assert.match(f.errors.at(-1), /12자/);
 });
 
-test('취소할 수 없는 초과 입력도 복원하고 Enter는 조합 종료 후 포커스를 해제한다', async () => {
+test('취소할 수 없는 초과 입력도 복원하고 Enter는 조합 중에도 제출 없이 포커스를 해제한다', async () => {
   const f = await fixture('abcdefghijkl');
   f.fire('beforeinput', { inputType: 'insertFromPaste', data: null });
   f.input.value += 'mnop'; f.fire('input');
   assert.equal(f.input.value, 'abcdefghijkl');
-  f.fire('compositionstart'); f.fire('keydown', { key: 'Enter', isComposing: true });
-  assert.equal(f.input.blurred, undefined);
+  f.fire('compositionstart');
+  assert.equal(f.fire('keydown', { key: 'Enter', isComposing: true }).prevented, true);
+  assert.equal(f.input.blurred, true);
   f.fire('compositionend');
   assert.equal(f.fire('keydown', { key: 'Enter' }).prevented, true);
   assert.equal(f.input.blurred, true);

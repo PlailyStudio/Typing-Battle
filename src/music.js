@@ -6,13 +6,13 @@ const TRACKS = {
     melody: [[78, 81, null, 78, 76, null, 74, null], [78, null, 81, 83, 81, null, 74, null], [79, 78, 74, null, 78, null, 81, null], [81, null, 76, 73, 76, null, 74, null]] }
 };
 
-export function createMusic({ enabled = true, volume = 0.8,
+export function createMusic({ enabled = true, volume = 1,
   createContext = () => { const Audio = window.AudioContext || window.webkitAudioContext; return Audio ? new Audio() : null; },
   schedule = callback => setInterval(callback, 50), cancel = id => clearInterval(id)
 } = {}) {
   let context, master, bus, timer = null, scene = 'lobby', step = 0, nextAt = 0, paused = false;
   const voices = new Set();
-  const clamp = value => Number.isFinite(Number(value)) ? Math.max(0, Math.min(1.5, Number(value))) : 0.8;
+  const clamp = value => Number.isFinite(Number(value)) ? Math.max(0, Math.min(2, Number(value))) : 1;
   volume = clamp(volume);
   function note(midi, at, duration, level, type = 'sine', kick = false) {
     const oscillator = context.createOscillator(), gain = context.createGain();

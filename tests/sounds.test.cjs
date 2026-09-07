@@ -24,6 +24,9 @@ test('오디오는 사용자 동작 후 한 번만 초기화하고 음소거·�
   assert.equal(f.gains[0].gain.value, 0); assert.equal(f.voices.length, 2);
   f.sounds.setVolume(0.15); f.sounds.setEnabled(true);
   assert.equal(f.gains[0].gain.value, 0.15);
+  f.sounds.setVolume(1.2); assert.equal(f.gains[0].gain.value, 1.2);
+  f.sounds.setVolume(3); assert.equal(f.gains[0].gain.value, 2);
+  f.sounds.setVolume(NaN); assert.equal(f.gains[0].gain.value, 1);
   f.voices[0].onended(); assert.equal(f.voices[0].disconnected, true);
   const muted = await fixture(false); muted.sounds.unlock(); assert.equal(muted.created(), 0);
 });

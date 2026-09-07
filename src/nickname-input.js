@@ -67,7 +67,7 @@ export function bindNicknameInput(input, { limit = 12, showError, onChange = () 
     onBlur(); remember();
   };
   input.onkeydown = event => {
-    if (!blurOnEnter || event.key !== 'Enter' || composing || event.isComposing || event.keyCode === 229) return;
+    if (!blurOnEnter || event.key !== 'Enter') return;
     event.preventDefault(); input.blur();
   };
 }
