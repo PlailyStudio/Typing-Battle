@@ -311,8 +311,7 @@ function arena() {
   $('#leave').onclick = leave;
   if (!isLobby) addPersonalSettings($('.arena'));
   if ($('#next-button')) {
-    // A live composition must be allowed to commit when clicking the button.
-    $('#next-button').onpointerdown = event => { if (!composing) event.preventDefault(); };
+    $('#next-button').onpointerdown = event => event.preventDefault();
     $('#next-button').onclick = () => {
       typingController?.confirm();
       const input = $('#typing');
@@ -383,8 +382,8 @@ function submitInput(advance = false) {
   const input = $('#typing');
   const inputMatched = input.value === targetAt(self.line) && !self.waiting;
   const oldCommitted = self.committed, oldAttempts = self.attempts, oldCorrect = self.correct;
-  // Wait for native compositionend before clearing the persistent input.
-  const resetInputSession = (autoNext && !composing && (inputMatched || self.waiting)) || (advance && self.waiting);
+  // Matching Korean text advances immediately; reset() guards trailing IME events.
+  const resetInputSession = (autoNext && (inputMatched || self.waiting)) || (advance && self.waiting);
   const data = { line: self.line, text: input.value, cursor: input.selectionStart, composing: resetInputSession ? false : composing, seq: ++seq, advance: advance === true };
   if (resetInputSession) { finalizingInput = true; composing = false; }
   applyInput(data);

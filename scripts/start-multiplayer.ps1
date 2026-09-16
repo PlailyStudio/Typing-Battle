@@ -61,19 +61,18 @@ try {
     }
 
     Write-Host '[1/4] Building the game server...'
-    $runtimePath = Join-Path $projectRoot 'server\modules\index.js'
-    $previousHash = if (Test-Path -LiteralPath $runtimePath) { (Get-FileHash -LiteralPath $runtimePath).Hash } else { '' }
     & $node scripts/build-server.js
     if ($LASTEXITCODE -ne 0) { throw 'Game server build failed.' }
-    $runtimeChanged = $previousHash -ne (Get-FileHash -LiteralPath $runtimePath).Hash
     $existingServer = & $docker compose ps --status running -q nakama
     if ($LASTEXITCODE -ne 0) { throw 'Could not inspect the existing game server.' }
 
     Write-Host '[2/4] Starting Docker services...'
     & $docker compose up -d
     if ($LASTEXITCODE -ne 0) { throw 'Docker services failed to start. Check the messages above.' }
-    if ($runtimeChanged -and $existingServer) {
-        Write-Host 'Server code changed. Restarting Nakama to load it (active matches will end).'
+    # On-disk hashes cannot tell which module an existing Nakama process loaded.
+    # Always reload after building, including when a separate build ran earlier.
+    if ($existingServer) {
+        Write-Host 'Reloading the latest server build (active matches will end).'
         & $docker compose restart nakama
         if ($LASTEXITCODE -ne 0) { throw 'Nakama restart failed.' }
     }

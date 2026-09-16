@@ -35,9 +35,8 @@ test('키 누름은 전환하지 않고 정답 뒤 추가 입력만 한 번 전�
   assert.equal(f.submissions.length, 0);
   f.fire('compositionstart');
   f.input.value = '완성 문장ㅁ'; f.fire('input', { isComposing: true, inputType: 'insertCompositionText' });
-  assert.equal(f.submissions.length, 0);
-  f.fire('compositionend');
   assert.deepEqual(f.submissions, [{ advance: true, text: '완성 문장' }]);
+  f.fire('compositionend');
   for (let i = 0; i < 3; i++) assert.equal(f.fire('keydown', { repeat: true }).prevented, true);
   assert.equal(f.fire('beforeinput', { inputType: 'insertCompositionText' }).prevented, true);
   f.fire('compositionend'); f.fire('input'); f.fire('keyup');
@@ -77,7 +76,7 @@ test('정답의 마지막 한글이 조합 중이어도 Enter 한 번으로 확�
     const f = await fixture();
     f.fire('compositionstart');
     f.fire('keydown', { code: 'Enter', key: 'Enter', ...flags });
-    assert.equal(f.submissions.length, 0);
+    assert.deepEqual(f.submissions, [{ advance: true, text: '완성 문장' }]);
     f.fire('compositionend'); f.fire('input', { isComposing: false });
     f.fire('keyup', { code: 'Enter', key: 'Enter' });
     assert.equal(f.submissions.length, 1);
@@ -170,8 +169,8 @@ test('같은 입력창을 초기화한 뒤 잔여 조합 이벤트만 무시하�
   const f = await fixture();
   f.fire('compositionstart');
   const enter = f.fire('keydown', { code: 'Enter', key: 'Enter', isComposing: true });
-  assert.equal(enter.prevented, undefined);
-  assert.equal(f.submissions.length, 0);
+  assert.equal(enter.prevented, true);
+  assert.equal(f.submissions.length, 1);
   f.fire('compositionend');
   assert.equal(f.submissions.length, 1);
   f.state.waiting = false; f.state.text = ''; f.controller.reset();

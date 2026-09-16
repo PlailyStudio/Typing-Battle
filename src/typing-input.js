@@ -4,7 +4,6 @@ export function bindTypingInput(input, { state, submit, setComposing, blockClipb
   let lastTypedText = input.value;
   let pressedKey = null;
   let confirmed = false;
-  let pendingConfirm = false;
   let suppressTail = false;
   const active = () => input.isConnected && state().enabled;
   const restore = () => {
@@ -19,8 +18,6 @@ export function bindTypingInput(input, { state, submit, setComposing, blockClipb
   const blocked = () => !active() || confirmed || transitionKeys.blockInput;
   const confirmSentence = () => {
     if (blocked() || !state().waiting) return;
-    // Never clear the value underneath a live native composition.
-    if (composing) { pendingConfirm = true; return; }
     restore();
     confirmed = true;
     transitionKeys.key = pressedKey;
@@ -50,11 +47,6 @@ export function bindTypingInput(input, { state, submit, setComposing, blockClipb
     const hadComposition = composing;
     composing = false;
     setComposing(false);
-    if (pendingConfirm) {
-      pendingConfirm = false;
-      confirmSentence();
-      return;
-    }
     if (blocked() || suppressTail) { restore(); return; }
     if (!hadComposition) return;
     if (confirmAddedText()) return;
@@ -87,10 +79,10 @@ export function bindTypingInput(input, { state, submit, setComposing, blockClipb
       transitionKeys.blockInput = false;
       suppressTail = false;
     }
-    // Let Enter end the native composition before clearing this same input.
+    // Confirm immediately, even while the final Korean syllable is composing.
     if (state().waiting && input.value === state().text
       && (event.key === 'Enter' || key === 'Enter' || key === 'NumpadEnter') && !event.repeat) {
-      if (!composing) event.preventDefault();
+      event.preventDefault();
       confirmSentence();
     }
   };
@@ -103,7 +95,7 @@ export function bindTypingInput(input, { state, submit, setComposing, blockClipb
   };
   input.onblur = () => {};
   input.onselect = () => {
-    if (!blocked() && !pendingConfirm && !suppressTail && input.selectionStart !== state().cursor) submit();
+    if (!blocked() && !suppressTail && input.selectionStart !== state().cursor) submit();
   };
   input.onbeforeinput = event => {
     if (!input.isConnected) return;
@@ -119,8 +111,9 @@ export function bindTypingInput(input, { state, submit, setComposing, blockClipb
   input.ondrop = blockClipboard;
   return {
     reset() {
+      transitionKeys.key = pressedKey;
+      transitionKeys.blockInput = !!pressedKey;
       confirmed = false;
-      pendingConfirm = false;
       composing = false;
       suppressTail = true;
       lastTypedText = '';

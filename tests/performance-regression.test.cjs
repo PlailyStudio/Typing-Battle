@@ -114,15 +114,15 @@ test('타이머는 전체 화면 갱신 없이 0.01초 차이를 표시한다', 
   assert.equal(f.get('#timer').textContent, '1.76');
 });
 
-test('자동 전환은 한글 조합 종료 후 같은 입력창을 비우고 잔여 이벤트를 차단한다', () => {
+test('자동 전환은 한글 조합 종료를 기다리지 않고 같은 입력창을 비우며 잔여 이벤트를 차단한다', () => {
   const f = ui(), input = f.get('#typing');
   input.value = ''; input.isConnected = true; input.selectionStart = 0;
   f.run("room.sentences = ['가', '나']; autoNext = true; attachTypingInput($('#typing'))");
   input.oncompositionstart();
   input.value = '가'; input.selectionStart = 1;
   input.oninput({ isComposing: true, inputType: 'insertCompositionText' });
-  assert.equal(f.run('self.line'), 0);
-  assert.equal(input.value, '가');
+  assert.equal(f.run('self.line'), 1);
+  assert.equal(input.value, '');
   input.oncompositionend();
   assert.equal(f.run('self.line'), 1);
   assert.equal(input.value, '');
@@ -130,6 +130,7 @@ test('자동 전환은 한글 조합 종료 후 같은 입력창을 비우고 �
   assert.equal(input.value, '');
   input.oncompositionstart(); input.value = '나'; input.selectionStart = 1;
   input.oninput({ isComposing: true, inputType: 'insertCompositionText' });
+  assert.equal(f.run('self.line'), 2);
   input.oncompositionend();
   assert.equal(f.run('self.line'), 2);
   assert.equal(f.run('self.finished'), 10000);
