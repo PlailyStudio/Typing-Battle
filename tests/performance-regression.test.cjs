@@ -62,7 +62,7 @@ function ui() {
     URL, URLSearchParams,
     location: { origin: 'http://localhost:5173', pathname: '/', hostname: 'localhost', search: '' },
     history: { replaceState() {} },
-    setInterval() {}, Date: { now: () => 10000 }
+    setInterval() {}, requestAnimationFrame() {}, Date: { now: () => 10000 }
   });
   vm.runInContext(fs.readFileSync('shared/rules.js', 'utf8'), context);
   vm.runInContext(fs.readFileSync('src/server-url.js', 'utf8').replaceAll('export function', 'function'), context);
@@ -70,6 +70,7 @@ function ui() {
     .replaceAll('import.meta.env', '({})').split('const initialInviteCode =')[0];
   vm.runInContext(fs.readFileSync('src/sounds.js', 'utf8').replace('export function', 'function'), context);
   vm.runInContext(fs.readFileSync('src/music.js', 'utf8').replace('export function', 'function'), context);
+  vm.runInContext(fs.readFileSync('src/typing-input.js', 'utf8').replace('export function', 'function'), context);
   vm.runInContext(source, context);
   vm.runInContext(`
     mode = 'single'; self = R.player('me', '나');
@@ -78,6 +79,47 @@ function ui() {
   `, context);
   return { context, get, run: code => vm.runInContext(code, context) };
 }
+
+test('문장 전환은 이벤트가 끝나기 전에 새 입력창에 포커스를 복구한다', () => {
+  for (const automatic of [false, true]) {
+    const f = ui(), input = f.get('#typing');
+    input.value = '값과'; input.selectionStart = 2;
+    input.isConnected = true;
+    f.context.document.activeElement = input;
+    input.blur = () => assert.fail('명시적인 blur는 필요하지 않음');
+    let replacement;
+    input.cloneNode = () => replacement = {
+      value: '', isConnected: true, disabled: false,
+      focus() { f.context.document.activeElement = this; },
+      setSelectionRange(start, end) { this.selectionStart = start; this.selectionEnd = end; }
+    };
+    input.replaceWith = node => {
+      input.isConnected = false;
+      f.context.document.activeElement = f.context.document.body;
+      f.context.document.querySelector = selector => selector === '#typing' ? node : f.get(selector);
+    };
+    f.run(`autoNext = ${automatic}; self.text = '값과'; self.waiting = ${!automatic}; submitInput(${!automatic})`);
+    assert.equal(f.run('self.line'), 1);
+    assert.equal(f.context.document.activeElement, replacement);
+    assert.equal(replacement.value, '');
+    assert.equal(replacement.selectionStart, 0);
+    replacement.value = '다'; replacement.selectionStart = 1;
+    replacement.oninput({ inputType: 'insertText', isComposing: false });
+    assert.equal(f.run('self.text'), '다');
+  }
+});
+
+test('타이머는 전체 화면 갱신 없이 0.01초 차이를 표시한다', () => {
+  const f = ui();
+  f.context.Date.now = () => 10231;
+  f.run('refreshTimer()');
+  assert.equal(f.get('#timer').textContent, '1.23');
+  f.context.Date.now = () => 10241;
+  f.run('refreshTimer()');
+  assert.equal(f.get('#timer').textContent, '1.24');
+  f.run("room.gameMode = 'timed'; room.endAt = 12000; refreshTimer()");
+  assert.equal(f.get('#timer').textContent, '1.76');
+});
 
 test('정답 입력과 조합 종료는 입력창·포커스·커서를 그대로 유지한다', () => {
   const f = ui(), input = f.get('#typing');

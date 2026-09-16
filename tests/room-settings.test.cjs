@@ -18,6 +18,21 @@ function fixture() {
   return { ctx, state, a, b, message, loop, settings, broadcasts, result };
 }
 
+test('같은 서버 틱 안에서도 완주 기록은 각 메시지의 밀리초 수신 시각을 보존한다', () => {
+  const f = fixture(), s = f.state;
+  s.phase = 'playing'; s.startAt = Date.now() - 2000; s.sentences = ['A'];
+  const messages = [];
+  for (const [index, sender] of [f.a, f.b].entries()) {
+    const received = s.startAt + 1234 + index * 10;
+    messages.push({ ...f.message(sender, 4, { line: 0, text: 'A', seq: 1 }), receiveTimeMs: received - 1 });
+    messages.push({ ...f.message(sender, 4, { line: 0, text: 'A', seq: 2, advance: true }), receiveTimeMs: received });
+  }
+  f.loop(...messages);
+  assert.equal(s.players[0].finished - s.startAt, 1234);
+  assert.equal(s.players[1].finished - s.startAt, 1244);
+  assert.equal(s.phase, 'result');
+});
+
 test('방장 설정 변경이 모두에게 전달되고 준비 해제 후 새 설정으로 경기가 시작된다', () => {
   const f = fixture(), { state: s, message: m } = f;
   f.loop(m(f.b, 2)); assert.equal(s.players[1].ready, true);

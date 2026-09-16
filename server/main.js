@@ -75,7 +75,11 @@ var matchLoop = function (ctx, logger, nk, d, tick, s, messages) {
         if (nextName) { p.name = nextName; s.names[p.id] = nextName; }
       }
       if (m.opCode === 3 && p.id === s.host && s.phase === 'lobby' && (data.version == null || data.version === (s.settingsVersion || 0)) && s.players.length >= 2 && s.players.every(function (x) { return x.id === s.host || x.ready; })) { s.sentences = s.sentenceOrder === 'sequential' ? (s.customSentences || R.sentencesFor(s.language)).slice() : R.shuffledSentences(null, s.language, s.customSentences); s.phase = 'countdown'; s.startAt = now + 3000; s.endAt = s.gameMode === 'race' ? 0 : s.startAt + s.duration * 1000; }
-      if (m.opCode === 4 && s.phase === 'playing') R.update(p, data, now, s.sentences, s.gameMode !== 'race');
+      if (m.opCode === 4 && s.phase === 'playing') {
+        // Server receipt time preserves milliseconds independently of the 10 Hz match loop.
+        var receivedAt = typeof m.receiveTimeMs === 'number' && isFinite(m.receiveTimeMs) ? m.receiveTimeMs : now;
+        if (receivedAt >= s.startAt && receivedAt <= now) R.update(p, data, receivedAt, s.sentences, s.gameMode !== 'race');
+      }
       if (m.opCode === 5 && p.id === s.host && s.phase === 'result') { s.players = s.players.filter(function (x) { return !x.left; }).map(function (x) { return R.player(x.id, x.name); }); s.phase = 'lobby'; s.startAt = 0; s.endAt = 0; }
     });
     if (s.gameMode === 'race' && s.phase === 'playing' && active.length && active.every(function (p) { return p.finished; })) s.phase = 'result';

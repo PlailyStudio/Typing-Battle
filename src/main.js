@@ -385,7 +385,7 @@ function submitInput(advance = false) {
   const resetInputSession = (autoNext && inputMatched) || (advance && self.waiting);
   const restoreFocus = document.activeElement === input || document.activeElement === $('#next-button');
   const data = { line: self.line, text: input.value, cursor: input.selectionStart, composing: resetInputSession ? false : composing, seq: ++seq, advance: advance === true };
-  if (resetInputSession) { finalizingInput = true; composing = false; input.blur(); }
+  if (resetInputSession) { finalizingInput = true; composing = false; }
   applyInput(data);
   // Automatic mode uses the same confirmation request as an extra input.
   if (autoNext && inputMatched && self.waiting) {
@@ -400,14 +400,13 @@ function submitInput(advance = false) {
   refresh();
   if (resetInputSession) {
     finalizingInput = false;
-    // Refocus after the native event batch, rather than inside compositionend/input.
-    setTimeout(() => {
-      if (restoreFocus && replacement.isConnected && !replacement.disabled && room?.phase === 'playing'
-        && (!document.activeElement || document.activeElement === document.body || document.activeElement === replacement || document.activeElement === $('#next-button'))) {
-        replacement.focus({ preventScroll: true });
-        replacement.setSelectionRange(replacement.value.length, replacement.value.length);
-      }
-    }, 0);
+    // Restore focus in the same event, before a paint or the next keystroke.
+    // Late IME events remain isolated on the detached input.
+    if (restoreFocus && replacement.isConnected && !replacement.disabled && room?.phase === 'playing'
+      && (!document.activeElement || document.activeElement === document.body || document.activeElement === replacement || document.activeElement === $('#next-button'))) {
+      replacement.focus({ preventScroll: true });
+      replacement.setSelectionRange(replacement.value.length, replacement.value.length);
+    }
   }
 }
 function refresh() {
@@ -439,7 +438,7 @@ function refresh() {
   const countdown = Math.max(0, Math.ceil((room.startAt - now()) / 1000));
   const countdownNumber = $('#countdown-number');
   if (countdownNumber && countdownNumber.textContent !== String(countdown || '시작!')) countdownNumber.textContent = String(countdown || '시작!');
-  setText($('#timer'), room.phase === 'countdown' ? countdown : isRace() ? elapsed(self).toFixed(1) : Math.max(0, Math.ceil((room.endAt - now()) / 1000)));
+  refreshTimer();
   setText($('#timer-label'), room.phase === 'countdown' ? '초 후 시작' : isRace() ? '초 경과' : '초 남음');
   setText($('#phase-label'), room.phase === 'countdown' ? '곧 시작합니다' : self.finished ? '입력 완료 · 결과 대기' : '진행 중');
   const sorted = room.players.map(p => p.id === self.id ? self : p).sort(comparePlayers);
@@ -491,6 +490,18 @@ function results() {
   $('#result-home').onclick = leave;
 }
 async function leave() { const old = socket; room = null; self = null; socket = null; displayedPhase = ''; if (old) { old.onmatchdata = () => {}; old.ondisconnect = () => {}; try { await old.leaveMatch(matchId); } catch {} old.disconnect(); } error = ''; home(); }
+function refreshTimer() {
+  const timer = $('#timer');
+  if (!timer || !room || !['countdown', 'playing'].includes(room.phase)) return;
+  setText(timer, room.phase === 'countdown'
+    ? Math.max(0, Math.ceil((room.startAt - now()) / 1000))
+    : (isRace() ? elapsed(self) : Math.max(0, (room.endAt - now()) / 1000)).toFixed(2));
+}
+function animateTimer() {
+  refreshTimer();
+  requestAnimationFrame(animateTimer);
+}
+requestAnimationFrame(animateTimer);
 setInterval(() => {
   if (!room || room.phase === 'lobby' || room.phase === 'result') return;
   if (mode === 'single') {
