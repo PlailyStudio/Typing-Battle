@@ -59,9 +59,13 @@ function ui() {
     document: { querySelector: get, querySelectorAll: () => [], addEventListener() {} },
     window: { addEventListener() {}, matchMedia: () => ({ matches: true }) },
     localStorage: { getItem() {}, setItem() {} }, TextEncoder, TextDecoder,
+    URL, URLSearchParams,
+    location: { origin: 'http://localhost:5173', pathname: '/', hostname: 'localhost', search: '' },
+    history: { replaceState() {} },
     setInterval() {}, Date: { now: () => 10000 }
   });
   vm.runInContext(fs.readFileSync('shared/rules.js', 'utf8'), context);
+  vm.runInContext(fs.readFileSync('src/server-url.js', 'utf8').replaceAll('export function', 'function'), context);
   const source = fs.readFileSync('src/main.js', 'utf8').replace(/^import .*;\r?\n/gm, '')
     .replaceAll('import.meta.env', '({})').split('const initialInviteCode =')[0];
   vm.runInContext(fs.readFileSync('src/sounds.js', 'utf8').replace('export function', 'function'), context);

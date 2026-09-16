@@ -4,8 +4,11 @@ import { bindTypingInput } from './typing-input.js';
 import { bindNicknameInput } from './nickname-input.js';
 import { createSounds } from './sounds.js';
 import { createMusic } from './music.js';
+import { buildInviteUrl, pagePath, parseServerOverride } from './server-url.js';
 
 const R = globalThis.BattleRules;
+const initialParams = new URLSearchParams(location.search);
+const serverOverride = parseServerOverride(initialParams.get('server'));
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const saved = (key, fallback = '') => { try { return localStorage.getItem(key) || fallback; } catch { return fallback; } };
@@ -62,7 +65,7 @@ function frame(body) {
 }
 function toast(text) { $('#toast').textContent = text; $('#toast').classList.add('show'); setTimeout(() => $('#toast')?.classList.remove('show'), 3500); }
 function inviteUrl(code = roomCode) {
-  return code ? `${location.origin}${location.pathname}?room=${encodeURIComponent(code)}` : '';
+  return buildInviteUrl(location, code, serverOverride);
 }
 function syncLanguageControl() {
   const control = $('#language');
@@ -213,8 +216,10 @@ async function launch(e) {
   let connectionStep = '서버 인증';
   try {
     const { Client } = await import('@heroiclabs/nakama-js');
-    const ssl = import.meta.env.VITE_NAKAMA_SSL === 'true';
-    const client = new Client(import.meta.env.VITE_NAKAMA_KEY || 'defaultkey', import.meta.env.VITE_NAKAMA_HOST || location.hostname, import.meta.env.VITE_NAKAMA_PORT || '7350', ssl);
+    const ssl = serverOverride?.ssl ?? import.meta.env.VITE_NAKAMA_SSL === 'true';
+    const host = serverOverride?.host || import.meta.env.VITE_NAKAMA_HOST || location.hostname;
+    const port = serverOverride?.port || import.meta.env.VITE_NAKAMA_PORT || '7350';
+    const client = new Client(import.meta.env.VITE_NAKAMA_KEY || 'defaultkey', host, port, ssl);
     client.timeout = 6000;
     let device = sessionStorage.getItem('tb-device'); if (!device) { device = crypto.randomUUID(); sessionStorage.setItem('tb-device', device); }
     session = await client.authenticateDevice(device, true);
@@ -243,7 +248,7 @@ async function launch(e) {
     const joined = await socket.joinMatch(matchId, undefined, { name: nickname });
     matchId = joined.match_id;
     pendingInviteCode = '';
-    if (location.search) history.replaceState(null, '', location.pathname);
+    if (location.search) history.replaceState(null, '', pagePath(location, serverOverride));
     if (!room) { room = { title: title || '타자 배틀', phase: 'lobby', host: '', max, players: [] }; arena(); }
   } catch (e) {
     room = null; socket?.disconnect(); socket = null;
@@ -483,7 +488,7 @@ setInterval(() => {
   }
   if (displayedPhase !== room.phase) arena(); else refresh();
 }, 100);
-const initialInviteCode = new URLSearchParams(location.search).get('room')?.trim();
+const initialInviteCode = initialParams.get('room')?.trim();
 if (/^\d{6}$/.test(initialInviteCode || '')) {
   tab = 'join';
   pendingInviteCode = initialInviteCode;

@@ -30,6 +30,29 @@ Nakama API는 7350 포트입니다. 서로 다른 브라우저 또는 두 개의
 
 서버 코드 변경 후 `npm run server:build`와 `docker compose restart nakama`를 실행하세요. 종료는 `docker compose down`입니다. 기본 설정은 로컬 개발용입니다.
 
+## GitHub Pages 배포
+
+`.github/workflows/pages.yml`은 `main` 브랜치가 갱신될 때 GitHub Pages를 자동 배포합니다. 저장소의 **Settings → Pages → Source**를 **GitHub Actions**로 설정하고, **Settings → Secrets and variables → Actions**에 아래 값을 등록하세요.
+
+- 변수 `VITE_NAKAMA_HOST`: Cloudflare Tunnel에 연결한 Nakama 공개 호스트명(프로토콜과 경로 제외)
+- 시크릿 `VITE_NAKAMA_KEY`: Nakama `socket.server_key`와 같은 값
+
+배포 빌드는 HTTPS/WSS용 포트 `443`과 `VITE_NAKAMA_SSL=true`를 사용합니다. Cloudflare Tunnel의 공개 호스트는 방장 PC의 `http://localhost:7350`으로 전달해야 합니다. 방장 PC에서 Docker와 Cloudflare Tunnel이 실행 중일 때만 멀티플레이 서버에 접속할 수 있습니다.
+
+개인 도메인 없이 Quick Tunnel을 사용할 때는 아래처럼 Nakama를 공개합니다.
+
+```powershell
+cloudflared tunnel --url http://localhost:7350
+```
+
+출력된 `https://무작위이름.trycloudflare.com` 주소에서 호스트명만 GitHub Pages 주소의 `server` 매개변수로 전달하세요.
+
+```text
+https://사용자명.github.io/저장소명/?server=무작위이름.trycloudflare.com
+```
+
+이 주소에서 방을 만들면 `room`과 `server`가 모두 들어간 초대 링크가 생성됩니다. Quick Tunnel 주소가 바뀌어도 GitHub Pages를 다시 빌드할 필요 없이 `server` 값만 새 호스트명으로 바꾸면 됩니다. `server`에는 HTTPS 호스트명만 허용하며 경로나 사용자 정보가 포함된 주소는 사용하지 않습니다.
+
 ## 구현 내용
 
 - 싱글플레이 / 방 생성 / 방 참가 탭, 2~4인 대기실, 준비와 방장 시작
