@@ -5,6 +5,7 @@ import { bindNicknameInput } from './nickname-input.js';
 import { createSounds } from './sounds.js';
 import { createMusic } from './music.js';
 import { buildInviteUrl, pagePath, parseServerOverride } from './server-url.js';
+import { createLobbySettings } from './lobby-settings.js';
 
 const R = globalThis.BattleRules;
 const initialParams = new URLSearchParams(location.search);
@@ -36,6 +37,7 @@ let gameMode = 'race', duration = 60;
 let sentenceSource = 'default', customText = '', sentenceOrder = 'sequential';
 let nickname = '', error = '', busy = false;
 let finalizingInput = false;
+let lobbySettings = null;
 let autoNext = saved('tb-next-mode', 'input') === 'auto';
 const app = $('#app');
 const encoder = new TextEncoder(), decoder = new TextDecoder();
@@ -59,6 +61,7 @@ function releaseTransitionKey(event) {
 window.addEventListener('keyup', releaseTransitionKey);
 window.addEventListener('blur', releaseTransitionKey);
 function frame(body) {
+  lobbySettings?.destroy(); lobbySettings = null;
   sentenceCache.clear();
   app.innerHTML = `<header><a class="brand" href="#" aria-label="메인으로">타자 배틀</a></header><main>${body}</main><div class="toast" role="status" id="toast"></div>`;
   $('.brand').onclick = e => { e.preventDefault(); if (!room) home(); else toast('경기를 나가려면 나가기 버튼을 눌러주세요.'); };
@@ -226,6 +229,7 @@ async function launch(e) {
     socket = client.createSocket(ssl, false);
     socket.ondisconnect = () => { if (room && mode === 'multi') { error = '서버 연결이 끊겼습니다. 방에 다시 입장해주세요.'; room = null; socket = null; home(); } };
     socket.onmatchdata = event => {
+      if (event.op_code === 8) { lobbySettings?.result(JSON.parse(decoder.decode(event.data))); return; }
       if (event.op_code !== 1) return;
       const next = JSON.parse(decoder.decode(event.data));
       offset = next.serverNow - Date.now();
@@ -308,6 +312,8 @@ function arena() {
     $('.arena').insertAdjacentHTML('beforeend', '<div class="countdown-overlay" role="status" aria-live="polite"><div class="countdown-content"><strong id="countdown-number" aria-label="시작까지 남은 초">3</strong></div></div>');
   }
   if (isLobby) {
+    $('.lobby-layout').insertAdjacentHTML('beforeend', '<section class="panel lobby-settings" id="lobby-settings"></section>');
+    lobbySettings = createLobbySettings($('#lobby-settings'), { rules: R, userId: session?.user_id, send, notify: toast });
     addPersonalSettings($('.lobby-layout > .panel'));
     const nameInput = $('#lobby-nickname');
     nameInput.value = self?.name || nickname;
@@ -363,7 +369,7 @@ function renewTypingInput(input) {
   attachTypingInput(replacement);
   return replacement;
 }
-async function send(op, data = {}) { try { await socket.sendMatchState(matchId, op, encoder.encode(JSON.stringify(data))); } catch { toast('입력 전송에 실패했습니다. 연결 상태를 확인해주세요.'); } }
+async function send(op, data = {}) { try { await socket.sendMatchState(matchId, op, encoder.encode(JSON.stringify(data))); return true; } catch { toast('입력 전송에 실패했습니다. 연결 상태를 확인해주세요.'); return false; } }
 function applyInput(data) {
   R.update(self, data, now(), matchSentences(), !isRace());
   if (mode === 'multi') send(4, data);
@@ -411,13 +417,18 @@ function refresh() {
   const roomLanguage = room.customSentences ? `직접 입력 · ${room.customSentences.length}문장 · ${room.sentenceOrder === 'sequential' ? '입력 순서대로' : '무작위'}` : room.language === 'en' ? '영어' : '한국어';
   setText($('#room-language'), roomLanguage + (isRace() ? ' · 완주' : ` · ${room.duration || 60}초`));
   if (room.phase === 'lobby') {
+    setText($('.arena-title h2'), room.title);
+    lobbySettings?.update(room);
     $('#share-code').value = room.code || roomCode;
     $('#invite-link').value = inviteUrl(room.code || roomCode);
     setText($('#count'), `${room.players.length} / ${room.max}`);
     setHTML($('#players'), room.players.map(p => `<div class="lobby-player"><span class="avatar">${esc(p.name.slice(0, 1))}</span><strong>${esc(p.name)}</strong><span>${p.id === room.host ? '방장' : p.ready ? '준비 완료' : '준비 중'}</span></div>`).join(''));
     const host = room.host === session?.user_id;
     setHTML($('#lobby-action'), `<button class="primary" id="ready" ${host && (room.players.length < 2 || room.players.some(p => p.id !== room.host && !p.ready)) ? 'disabled' : ''}>${host ? '경기 시작하기' : self?.ready ? '준비 취소' : '준비 완료'}</button>`);
-    $('#ready').onclick = () => send(host ? 3 : 2); return;
+    $('#ready').onclick = () => {
+      if (host && lobbySettings?.hasUnsavedChanges()) { toast('변경한 방 설정을 저장하거나 취소해주세요.'); return; }
+      send(host ? 3 : 2, { version: room.settingsVersion || 0 });
+    }; return;
   }
   if (room.phase === 'result') { results(); return; }
   if (!self) return;

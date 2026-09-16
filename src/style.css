@@ -141,4 +141,14 @@ main:has(.opponent){max-width:1600px}
 .personal-settings #next-mode{display:block;width:min(100%,440px)}
 .audio-settings{display:flex;gap:20px;max-width:100%;min-width:0;padding-bottom:4px}
 .audio-setting{flex:0 1 280px;min-width:0;max-width:100%}
+.lobby-settings{grid-column:1/-1;min-width:0}
+.lobby-settings h3{font-size:18px;margin:0 0 8px}
+.lobby-settings .error{color:#b33}
+.lobby-settings fieldset{border:0;padding:0;margin:0;min-width:0}
+.room-settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 24px}
+.room-settings-grid>.full-width{grid-column:1/-1}
+.room-settings-actions{display:flex;gap:12px;margin-top:20px}
+.room-settings-actions[hidden]{display:none}
+.lobby-settings :disabled{color:#777;background:#fafafa}
+@media(max-width:600px){.room-settings-grid{grid-template-columns:1fr;gap:0}.room-settings-actions{flex-wrap:wrap}}
 .lobby-layout>.panel,.personal-settings{min-width:0}

@@ -78,8 +78,11 @@ export function bindTypingInput(input, { state, submit, setComposing, blockClipb
       transitionKeys.blockInput = false;
       input.readOnly = false;
     }
-    if (state().waiting && (event.key === 'Enter' || key === 'Enter' || key === 'NumpadEnter')
-      && !composing && !event.isComposing && event.keyCode !== 229) {
+    // The final Korean syllable can still be in an IME session after the
+    // sentence matches. Enter confirms that sentence too; replacing the input
+    // in submit() isolates the old session's trailing composition events.
+    if (state().waiting && input.value === state().text
+      && (event.key === 'Enter' || key === 'Enter' || key === 'NumpadEnter') && !event.repeat) {
       event.preventDefault();
       confirmSentence();
     }
@@ -100,6 +103,9 @@ export function bindTypingInput(input, { state, submit, setComposing, blockClipb
   input.onbeforeinput = event => {
     if (!input.isConnected) return;
     if (blocked()) { event.preventDefault(); restore(); return; }
+    if (['insertLineBreak', 'insertParagraph'].includes(event.inputType) && state().waiting && input.value === state().text) {
+      event.preventDefault(); confirmSentence(); return;
+    }
     if (['insertFromPaste', 'insertFromPasteAsQuotation', 'insertFromDrop', 'deleteByCut'].includes(event.inputType)) blockClipboard(event);
   };
   input.onpaste = blockClipboard;

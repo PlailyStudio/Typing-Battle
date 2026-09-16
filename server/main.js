@@ -1,5 +1,25 @@
 var R = this.BattleRules;
 function broadcast(d, s) { s.serverNow = Date.now(); d.broadcastMessage(1, JSON.stringify(s)); }
+function changeSettings(s, data) {
+  if (data.version !== (s.settingsVersion || 0)) throw Error('방 설정이 변경되었습니다. 최신 설정을 확인한 뒤 다시 저장해주세요.');
+  if (typeof data.title !== 'string' || !data.title.trim() || data.title.trim().length > 30) throw Error('방 이름은 1~30자로 입력해주세요.');
+  if (typeof data.max !== 'number' || Math.floor(data.max) !== data.max || data.max < 2 || data.max > 4) throw Error('최대 인원은 2~4명이어야 합니다.');
+  if (data.max < s.players.length) throw Error('현재 참가자 수보다 최대 인원을 줄일 수 없습니다.');
+  if (data.language !== 'ko' && data.language !== 'en') throw Error('언어 설정이 올바르지 않습니다.');
+  if (data.gameMode !== 'race' && data.gameMode !== 'timed') throw Error('경기 방식이 올바르지 않습니다.');
+  if (data.sentenceOrder !== 'sequential' && data.sentenceOrder !== 'random') throw Error('출제 순서가 올바르지 않습니다.');
+  var duration = R.durationSeconds(data.duration);
+  var sentences = data.customText == null ? null : R.parseCustomSentences(data.customText);
+  var next = { title: data.title.trim(), max: data.max, language: data.language, gameMode: data.gameMode, duration: duration, sentenceOrder: data.sentenceOrder, customSentences: sentences };
+  var changed = Object.keys(next).some(function (key) { return JSON.stringify(s[key]) !== JSON.stringify(next[key]); });
+  if (changed) {
+    Object.keys(next).forEach(function (key) { s[key] = next[key]; });
+    s.settingsVersion = (s.settingsVersion || 0) + 1;
+    s.players.forEach(function (player) { player.ready = false; });
+    delete s.sentences;
+  }
+  return changed;
+}
 var matchInit = function (ctx, logger, nk, params) {
     var duration = params.gameMode === 'race' ? 60 : R.durationSeconds(params.duration);
     var customSentences = params.customText == null ? null : R.parseCustomSentences(params.customText);
@@ -40,12 +60,21 @@ var matchLoop = function (ctx, logger, nk, d, tick, s, messages) {
       if (!p) return;
       var data; try { data = JSON.parse(nk.binaryToString(m.data)); } catch (e) { return; }
       if (!data || typeof data !== 'object') return;
-      if (m.opCode === 2 && s.phase === 'lobby') p.ready = !p.ready;
+      if (m.opCode === 7) {
+        try {
+          if (s.phase !== 'lobby' || p.id !== s.host) throw Error('대기실에서 방장만 설정을 변경할 수 있습니다.');
+          var changed = changeSettings(s, data);
+          d.broadcastMessage(8, JSON.stringify({ ok: true, changed: changed }), [m.sender]);
+        } catch (e) {
+          d.broadcastMessage(8, JSON.stringify({ ok: false, error: e.message }), [m.sender]);
+        }
+      }
+      if (m.opCode === 2 && s.phase === 'lobby' && (data.version == null || data.version === (s.settingsVersion || 0))) p.ready = !p.ready;
       if (m.opCode === 6 && s.phase === 'lobby' && typeof data.name === 'string') {
         var nextName = data.name.trim().slice(0, 12);
         if (nextName) { p.name = nextName; s.names[p.id] = nextName; }
       }
-      if (m.opCode === 3 && p.id === s.host && s.phase === 'lobby' && s.players.length >= 2 && s.players.every(function (x) { return x.id === s.host || x.ready; })) { s.sentences = s.sentenceOrder === 'sequential' ? (s.customSentences || R.sentencesFor(s.language)).slice() : R.shuffledSentences(null, s.language, s.customSentences); s.phase = 'countdown'; s.startAt = now + 3000; s.endAt = s.gameMode === 'race' ? 0 : s.startAt + s.duration * 1000; }
+      if (m.opCode === 3 && p.id === s.host && s.phase === 'lobby' && (data.version == null || data.version === (s.settingsVersion || 0)) && s.players.length >= 2 && s.players.every(function (x) { return x.id === s.host || x.ready; })) { s.sentences = s.sentenceOrder === 'sequential' ? (s.customSentences || R.sentencesFor(s.language)).slice() : R.shuffledSentences(null, s.language, s.customSentences); s.phase = 'countdown'; s.startAt = now + 3000; s.endAt = s.gameMode === 'race' ? 0 : s.startAt + s.duration * 1000; }
       if (m.opCode === 4 && s.phase === 'playing') R.update(p, data, now, s.sentences, s.gameMode !== 'race');
       if (m.opCode === 5 && p.id === s.host && s.phase === 'result') { s.players = s.players.filter(function (x) { return !x.left; }).map(function (x) { return R.player(x.id, x.name); }); s.phase = 'lobby'; s.startAt = 0; s.endAt = 0; }
     });

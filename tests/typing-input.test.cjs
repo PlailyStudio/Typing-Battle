@@ -70,19 +70,34 @@ test('Enter와 숫자패드 Enter는 대기 중 한 번만 확정하고 반복 �
   }
 });
 
-test('한글 조합 확정용 Enter는 전환하지 않고 이후 새 Enter로 확정한다', async () => {
+test('정답의 마지막 한글이 조합 중이어도 Enter 한 번으로 확정한다', async () => {
   for (const flags of [{ isComposing: true }, { keyCode: 229 }]) {
     const f = await fixture();
+    f.fire('compositionstart');
     f.fire('keydown', { code: 'Enter', key: 'Enter', ...flags });
-    assert.equal(f.submissions.length, 0);
+    assert.deepEqual(f.submissions, [{ advance: true, text: '완성 문장' }]);
+    f.fire('compositionend'); f.fire('input', { isComposing: false });
     f.fire('keyup', { code: 'Enter', key: 'Enter' });
-    f.fire('keydown', { code: 'Enter', key: 'Enter' });
     assert.equal(f.submissions.length, 1);
   }
-  const f = await fixture();
+  const f = await fixture(false);
   f.fire('compositionstart');
   f.fire('keydown', { code: 'Enter', key: 'Enter' });
   assert.equal(f.submissions.length, 0);
+});
+
+test('조합 중 편집한 오답·반복 Enter는 전환하지 않고 모바일 줄바꿈은 전환한다', async () => {
+  const edited = await fixture();
+  edited.input.value = '편집 중인 다른 문장';
+  edited.fire('keydown', { code: 'Enter', key: 'Enter', isComposing: true });
+  assert.equal(edited.submissions.length, 0);
+  const held = await fixture();
+  held.fire('keydown', { code: 'Enter', key: 'Enter', repeat: true });
+  assert.equal(held.submissions.length, 0);
+  const mobile = await fixture();
+  assert.equal(mobile.fire('beforeinput', { inputType: 'insertLineBreak' }).prevented, true);
+  mobile.fire('input', { inputType: 'insertLineBreak' });
+  assert.deepEqual(mobile.submissions, [{ advance: true, text: '완성 문장' }]);
 });
 
 test('키보드 이벤트 없는 모바일 추가 입력도 전환하고 붙여넣기는 차단한다', async () => {
