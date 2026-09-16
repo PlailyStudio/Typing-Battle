@@ -37,6 +37,9 @@ let gameMode = 'race', duration = 60;
 let sentenceSource = 'default', customText = '', sentenceOrder = 'sequential';
 let nickname = '', error = '', busy = false;
 let finalizingInput = false;
+let typingController = null;
+const clockEpoch = Date.now() - performance.now();
+const preciseNow = () => clockEpoch + performance.now();
 let lobbySettings = null;
 let autoNext = saved('tb-next-mode', 'input') === 'auto';
 const app = $('#app');
@@ -56,7 +59,6 @@ const transitionKeys = { key: null, blockInput: false };
 function releaseTransitionKey(event) {
   if (event.type !== 'blur' && event.code !== transitionKeys.key && event.key !== transitionKeys.key) return;
   transitionKeys.key = null; transitionKeys.blockInput = false;
-  if ($('#typing')) $('#typing').readOnly = false;
 }
 window.addEventListener('keyup', releaseTransitionKey);
 window.addEventListener('blur', releaseTransitionKey);
@@ -232,7 +234,7 @@ async function launch(e) {
       if (event.op_code === 8) { lobbySettings?.result(JSON.parse(decoder.decode(event.data))); return; }
       if (event.op_code !== 1) return;
       const next = JSON.parse(decoder.decode(event.data));
-      offset = next.serverNow - Date.now();
+      offset = next.serverNow - preciseNow();
       const mine = next.players.find(p => p.id === session.user_id);
       if (mine && (!self || next.phase === 'lobby' || next.phase === 'result' || mine.seq >= self.seq)) self = { ...mine };
       if (next.phase === 'lobby') { resultSaved = false; composing = false; seq = 0; }
@@ -268,7 +270,8 @@ function startSolo() {
   mode = 'single'; offset = 0; seq = 0; resultSaved = false; composing = false;
   self = R.player('me', nickname);
   const customSentences = sentenceSource === 'custom' ? R.parseCustomSentences(customText) : null;
-  room = { gameMode, duration: gameMode === 'race' ? 60 : duration, language, customSentences, sentenceOrder, sentences: sentenceOrder === 'sequential' ? (customSentences || R.sentencesFor(language)).slice() : R.shuffledSentences(null, language, customSentences), title: gameMode === 'race' ? '완주' : '시간 제한', phase: 'countdown', players: [self], host: 'me', max: 1, startAt: Date.now() + 3000, endAt: gameMode === 'race' ? 0 : Date.now() + 3000 + duration * 1000 };
+  const startAt = preciseNow() + 3000;
+  room = { gameMode, duration: gameMode === 'race' ? 60 : duration, language, customSentences, sentenceOrder, sentences: sentenceOrder === 'sequential' ? (customSentences || R.sentencesFor(language)).slice() : R.shuffledSentences(null, language, customSentences), title: gameMode === 'race' ? '완주' : '시간 제한', phase: 'countdown', players: [self], host: 'me', max: 1, startAt, endAt: gameMode === 'race' ? 0 : startAt + duration * 1000 };
   arena();
 }
 function matchSentences() { return room?.sentences || R.sentencesFor(room?.language); }
@@ -281,7 +284,7 @@ function comparePlayers(a, b) {
   if (a.left !== b.left) return a.left ? 1 : -1;
   return R.strokeProgress(b, matchSentences()) - R.strokeProgress(a, matchSentences()) || R.accuracy(b) - R.accuracy(a);
 }
-function now() { return Date.now() + offset; }
+function now() { return preciseNow() + offset; }
 function cpm(p) { return room?.startAt ? R.typingSpeed(p, elapsed(p), matchSentences()) : 0; }
 function sentence(p) {
   const text = (p.finished ? null : targetAt(p.line)); if (!text) return '<span class="complete-text">모든 문장을 완성했습니다.</span>';
@@ -307,7 +310,15 @@ function arena() {
   if (isRace() && !isLobby && !isResult) $('.match-strip').insertAdjacentHTML('beforeend', '<div id="self-progress"></div>');
   $('#leave').onclick = leave;
   if (!isLobby) addPersonalSettings($('.arena'));
-  if ($('#next-button')) $('#next-button').onclick = () => { if (self?.waiting) submitInput(true); };
+  if ($('#next-button')) {
+    // A live composition must be allowed to commit when clicking the button.
+    $('#next-button').onpointerdown = event => { if (!composing) event.preventDefault(); };
+    $('#next-button').onclick = () => {
+      typingController?.confirm();
+      const input = $('#typing');
+      if (input && !input.disabled && document.activeElement !== input) input.focus({ preventScroll: true });
+    };
+  }
   if (room.phase === 'countdown') {
     $('.arena').insertAdjacentHTML('beforeend', '<div class="countdown-overlay" role="status" aria-live="polite"><div class="countdown-content"><strong id="countdown-number" aria-label="시작까지 남은 초">3</strong></div></div>');
   }
@@ -352,7 +363,7 @@ function arena() {
 }
 function blockClipboard(e) { e.preventDefault(); toast('타자 영역에서는 복사·붙여넣기를 사용할 수 없습니다. 직접 입력해주세요.'); }
 function attachTypingInput(input) {
-  bindTypingInput(input, {
+  typingController = bindTypingInput(input, {
     state: () => ({ enabled: !finalizingInput && room?.phase === 'playing' && !!self && !self.finished && !expired(), waiting: !!self?.waiting, text: self?.text || '', cursor: self?.cursor || 0 }),
     transitionKeys,
     submit: submitInput,
@@ -360,14 +371,6 @@ function attachTypingInput(input) {
     setComposing: value => { composing = value; },
     blockClipboard
   });
-}
-function renewTypingInput(input) {
-  // A new DOM input starts a fresh native IME session; late events stay on the old node.
-  const replacement = input.cloneNode(false);
-  replacement.value = self?.text || '';
-  input.replaceWith(replacement);
-  attachTypingInput(replacement);
-  return replacement;
 }
 async function send(op, data = {}) { try { await socket.sendMatchState(matchId, op, encoder.encode(JSON.stringify(data))); return true; } catch { toast('입력 전송에 실패했습니다. 연결 상태를 확인해주세요.'); return false; } }
 function applyInput(data) {
@@ -380,15 +383,13 @@ function submitInput(advance = false) {
   const input = $('#typing');
   const inputMatched = input.value === targetAt(self.line) && !self.waiting;
   const oldCommitted = self.committed, oldAttempts = self.attempts, oldCorrect = self.correct;
-  // Keep the native input and selection while waiting for confirmation.
-  // Only an actual sentence transition needs a fresh IME session.
-  const resetInputSession = (autoNext && inputMatched) || (advance && self.waiting);
-  const restoreFocus = document.activeElement === input || document.activeElement === $('#next-button');
+  // Wait for native compositionend before clearing the persistent input.
+  const resetInputSession = (autoNext && !composing && (inputMatched || self.waiting)) || (advance && self.waiting);
   const data = { line: self.line, text: input.value, cursor: input.selectionStart, composing: resetInputSession ? false : composing, seq: ++seq, advance: advance === true };
   if (resetInputSession) { finalizingInput = true; composing = false; }
   applyInput(data);
   // Automatic mode uses the same confirmation request as an extra input.
-  if (autoNext && inputMatched && self.waiting) {
+  if (autoNext && resetInputSession && self.waiting) {
     applyInput({ line: self.line, text: self.text, advance: true, seq: ++seq });
   }
   if (self.line !== data.line) sounds.play('complete');
@@ -396,18 +397,9 @@ function submitInput(advance = false) {
     if (self.attempts - oldAttempts > self.correct - oldCorrect) sounds.play('error');
   }
   if (!composing && self.text !== input.value) input.value = self.text;
-  const replacement = resetInputSession ? renewTypingInput(input) : null;
+  if (self.line !== data.line) typingController?.reset();
+  finalizingInput = false;
   refresh();
-  if (resetInputSession) {
-    finalizingInput = false;
-    // Restore focus in the same event, before a paint or the next keystroke.
-    // Late IME events remain isolated on the detached input.
-    if (restoreFocus && replacement.isConnected && !replacement.disabled && room?.phase === 'playing'
-      && (!document.activeElement || document.activeElement === document.body || document.activeElement === replacement || document.activeElement === $('#next-button'))) {
-      replacement.focus({ preventScroll: true });
-      replacement.setSelectionRange(replacement.value.length, replacement.value.length);
-    }
-  }
 }
 function refresh() {
   if (!room) return;
@@ -472,7 +464,6 @@ function refresh() {
   const lastSentence = isRace() && self.line === matchSentences().length - 1;
   setText($('#input-hint'), autoNext ? '문장을 정확하게 입력하면 자동으로 다음 문장으로 넘어갑니다.' : self.waiting ? lastSentence ? '입력 확인! Enter를 누르거나 문자·공백을 추가로 입력하면 완주가 확정됩니다.' : '입력 확인! Enter를 누르거나 문자·공백을 추가로 입력하면 다음 문장으로 넘어갑니다.' : '문장을 정확하게 입력한 뒤 Enter를 누르거나 문자·공백을 추가로 입력해 완성을 확정해주세요.');
   setText($('#next-button'), lastSentence ? '완주 확정' : '다음 문장');
-  $('#typing').readOnly = transitionKeys.blockInput;
   $('#typing').maxLength = self.waiting ? 161 : 160;
   $('#next-button').hidden = !self.waiting;
   $('#next-button').disabled = room.phase !== 'playing' || expired();

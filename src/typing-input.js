@@ -1,9 +1,11 @@
-/** Bind one native input session. Replaced inputs cannot submit late IME events. */
+/** Keep one focused native input across sentences, including IME sessions. */
 export function bindTypingInput(input, { state, submit, setComposing, blockClipboard, onType = () => {}, transitionKeys = { key: null, blockInput: false } }) {
   let composing = false;
   let lastTypedText = input.value;
   let pressedKey = null;
   let confirmed = false;
+  let pendingConfirm = false;
+  let suppressTail = false;
   const active = () => input.isConnected && state().enabled;
   const restore = () => {
     const text = state().text;
@@ -17,6 +19,8 @@ export function bindTypingInput(input, { state, submit, setComposing, blockClipb
   const blocked = () => !active() || confirmed || transitionKeys.blockInput;
   const confirmSentence = () => {
     if (blocked() || !state().waiting) return;
+    // Never clear the value underneath a live native composition.
+    if (composing) { pendingConfirm = true; return; }
     restore();
     confirmed = true;
     transitionKeys.key = pressedKey;
@@ -36,6 +40,7 @@ export function bindTypingInput(input, { state, submit, setComposing, blockClipb
   };
 
   input.oncompositionstart = () => {
+    suppressTail = false;
     if (blocked()) { restore(); return; }
     composing = true;
     setComposing(true);
@@ -45,14 +50,19 @@ export function bindTypingInput(input, { state, submit, setComposing, blockClipb
     const hadComposition = composing;
     composing = false;
     setComposing(false);
-    if (blocked()) { restore(); return; }
+    if (pendingConfirm) {
+      pendingConfirm = false;
+      confirmSentence();
+      return;
+    }
+    if (blocked() || suppressTail) { restore(); return; }
     if (!hadComposition) return;
     if (confirmAddedText()) return;
     submit();
   };
   input.oninput = event => {
     if (!input.isConnected) return;
-    if (blocked()) { restore(); return; }
+    if (blocked() || suppressTail) { restore(); return; }
     if (['insertFromPaste', 'insertFromPasteAsQuotation', 'insertFromDrop'].includes(event.inputType)) { blockClipboard(event); restore(); return; }
     if (confirmAddedText(event)) return;
     if (input.value !== lastTypedText) {
@@ -69,21 +79,18 @@ export function bindTypingInput(input, { state, submit, setComposing, blockClipb
     if (transitionKeys.key === key) {
       event.preventDefault();
       transitionKeys.blockInput = true;
-      input.readOnly = true;
       return;
     }
     pressedKey = key;
     // A different fresh key can type immediately, even before the transition key is released.
     if (!event.repeat) {
       transitionKeys.blockInput = false;
-      input.readOnly = false;
+      suppressTail = false;
     }
-    // The final Korean syllable can still be in an IME session after the
-    // sentence matches. Enter confirms that sentence too; replacing the input
-    // in submit() isolates the old session's trailing composition events.
+    // Let Enter end the native composition before clearing this same input.
     if (state().waiting && input.value === state().text
       && (event.key === 'Enter' || key === 'Enter' || key === 'NumpadEnter') && !event.repeat) {
-      event.preventDefault();
+      if (!composing) event.preventDefault();
       confirmSentence();
     }
   };
@@ -93,15 +100,15 @@ export function bindTypingInput(input, { state, submit, setComposing, blockClipb
     event.preventDefault();
     transitionKeys.key = null;
     transitionKeys.blockInput = false;
-    if (input.isConnected) input.readOnly = false;
   };
-  // Native blur is part of replacing the input, so preserve the held-key guard.
   input.onblur = () => {};
   input.onselect = () => {
-    if (!blocked() && input.selectionStart !== state().cursor) submit();
+    if (!blocked() && !pendingConfirm && !suppressTail && input.selectionStart !== state().cursor) submit();
   };
   input.onbeforeinput = event => {
     if (!input.isConnected) return;
+    // A fresh non-composition edit also releases the tail guard on mobile.
+    if (!event.isComposing && ['insertText', 'deleteContentBackward', 'deleteContentForward'].includes(event.inputType)) suppressTail = false;
     if (blocked()) { event.preventDefault(); restore(); return; }
     if (['insertLineBreak', 'insertParagraph'].includes(event.inputType) && state().waiting && input.value === state().text) {
       event.preventDefault(); confirmSentence(); return;
@@ -110,4 +117,18 @@ export function bindTypingInput(input, { state, submit, setComposing, blockClipb
   };
   input.onpaste = blockClipboard;
   input.ondrop = blockClipboard;
+  return {
+    reset() {
+      confirmed = false;
+      pendingConfirm = false;
+      composing = false;
+      suppressTail = true;
+      lastTypedText = '';
+      setComposing(false);
+      input.value = '';
+      input.setSelectionRange?.(0, 0);
+      input.scrollLeft = 0;
+    },
+    confirm: confirmSentence
+  };
 }

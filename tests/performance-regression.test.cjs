@@ -62,7 +62,7 @@ function ui() {
     URL, URLSearchParams,
     location: { origin: 'http://localhost:5173', pathname: '/', hostname: 'localhost', search: '' },
     history: { replaceState() {} },
-    setInterval() {}, requestAnimationFrame() {}, Date: { now: () => 10000 }
+    setInterval() {}, requestAnimationFrame() {}, performance: { now: () => 10000 }, Date: { now: () => 10000 }
   });
   vm.runInContext(fs.readFileSync('shared/rules.js', 'utf8'), context);
   vm.runInContext(fs.readFileSync('src/server-url.js', 'utf8').replaceAll('export function', 'function'), context);
@@ -80,45 +80,59 @@ function ui() {
   return { context, get, run: code => vm.runInContext(code, context) };
 }
 
-test('문장 전환은 이벤트가 끝나기 전에 새 입력창에 포커스를 복구한다', () => {
+test('수동·자동 문장 전환은 같은 입력창과 포커스를 유지하고 바로 다음 글자를 받는다', () => {
   for (const automatic of [false, true]) {
     const f = ui(), input = f.get('#typing');
-    input.value = '값과'; input.selectionStart = 2;
-    input.isConnected = true;
+    input.value = '값과'; input.selectionStart = 2; input.isConnected = true;
     f.context.document.activeElement = input;
-    input.blur = () => assert.fail('명시적인 blur는 필요하지 않음');
-    let replacement;
-    input.cloneNode = () => replacement = {
-      value: '', isConnected: true, disabled: false,
-      focus() { f.context.document.activeElement = this; },
-      setSelectionRange(start, end) { this.selectionStart = start; this.selectionEnd = end; }
-    };
-    input.replaceWith = node => {
-      input.isConnected = false;
-      f.context.document.activeElement = f.context.document.body;
-      f.context.document.querySelector = selector => selector === '#typing' ? node : f.get(selector);
-    };
-    f.run(`autoNext = ${automatic}; self.text = '값과'; self.waiting = ${!automatic}; submitInput(${!automatic})`);
+    for (const method of ['blur', 'focus', 'cloneNode', 'replaceWith']) input[method] = () => assert.fail(method);
+    input.setSelectionRange = (start, end) => { input.selectionStart = start; input.selectionEnd = end; };
+    f.run(`attachTypingInput($('#typing')); autoNext = ${automatic}; self.text = '값과'; self.waiting = ${!automatic}; submitInput(${!automatic})`);
     assert.equal(f.run('self.line'), 1);
-    assert.equal(f.context.document.activeElement, replacement);
-    assert.equal(replacement.value, '');
-    assert.equal(replacement.selectionStart, 0);
-    replacement.value = '다'; replacement.selectionStart = 1;
-    replacement.oninput({ inputType: 'insertText', isComposing: false });
+    assert.equal(f.context.document.activeElement, input);
+    assert.equal(f.get('#typing'), input);
+    assert.equal(input.value, '');
+    assert.equal(input.selectionStart, 0);
+    input.value = '값과'; input.oninput({ inputType: 'insertCompositionText', isComposing: false });
+    assert.equal(input.value, '');
+    input.oncompositionstart();
+    input.value = '다'; input.selectionStart = 1;
+    input.oninput({ inputType: 'insertCompositionText', isComposing: true });
     assert.equal(f.run('self.text'), '다');
   }
 });
 
 test('타이머는 전체 화면 갱신 없이 0.01초 차이를 표시한다', () => {
   const f = ui();
-  f.context.Date.now = () => 10231;
+  f.context.performance.now = () => 10231;
   f.run('refreshTimer()');
   assert.equal(f.get('#timer').textContent, '1.23');
-  f.context.Date.now = () => 10241;
+  f.context.performance.now = () => 10241;
   f.run('refreshTimer()');
   assert.equal(f.get('#timer').textContent, '1.24');
   f.run("room.gameMode = 'timed'; room.endAt = 12000; refreshTimer()");
   assert.equal(f.get('#timer').textContent, '1.76');
+});
+
+test('자동 전환은 한글 조합 종료 후 같은 입력창을 비우고 잔여 이벤트를 차단한다', () => {
+  const f = ui(), input = f.get('#typing');
+  input.value = ''; input.isConnected = true; input.selectionStart = 0;
+  f.run("room.sentences = ['가', '나']; autoNext = true; attachTypingInput($('#typing'))");
+  input.oncompositionstart();
+  input.value = '가'; input.selectionStart = 1;
+  input.oninput({ isComposing: true, inputType: 'insertCompositionText' });
+  assert.equal(f.run('self.line'), 0);
+  assert.equal(input.value, '가');
+  input.oncompositionend();
+  assert.equal(f.run('self.line'), 1);
+  assert.equal(input.value, '');
+  input.value = '가'; input.oninput({ isComposing: false, inputType: 'insertCompositionText' });
+  assert.equal(input.value, '');
+  input.oncompositionstart(); input.value = '나'; input.selectionStart = 1;
+  input.oninput({ isComposing: true, inputType: 'insertCompositionText' });
+  input.oncompositionend();
+  assert.equal(f.run('self.line'), 2);
+  assert.equal(f.run('self.finished'), 10000);
 });
 
 test('정답 입력과 조합 종료는 입력창·포커스·커서를 그대로 유지한다', () => {
@@ -198,4 +212,19 @@ test('상대 화면과 대기실·결과는 동일한 방송에서 DOM을 유지
   assert.equal(f.get('#results').htmlWrites, 1);
   assert.equal(typeof f.get('#again').onclick, 'function');
   assert.equal(typeof f.get('#result-home').onclick, 'function');
+});
+
+test('완주 입력 이벤트에서 고해상도 시간을 확정하고 100ms 갱신과 무관하게 결과에 보존한다', () => {
+  for (const finish of [10231.25, 10241.75]) {
+    const f = ui(), input = f.get('#typing');
+    input.value = 'A'; input.selectionStart = 1; input.isConnected = true;
+    f.run("room.sentences = ['A']; attachTypingInput($('#typing')); self.text = 'A'; self.waiting = true");
+    f.context.performance.now = () => finish;
+    f.context.Date.now = () => 999999; // System clock jumps do not change elapsed time.
+    f.run('submitInput(true)');
+    assert.equal(f.run('self.finished'), finish);
+    f.context.performance.now = () => 11000;
+    f.run("room.phase = 'result'; results()");
+    assert.ok(f.get('#results').html.includes(((finish - 9000) / 1000).toFixed(2) + '초'));
+  }
 });

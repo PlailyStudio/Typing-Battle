@@ -6,13 +6,13 @@ async function fixture(waiting = true, transitionKeys = { key: null, blockInput:
   const state = { enabled: true, waiting, text: waiting ? '완성 문장' : '', cursor: 0 };
   const input = { isConnected: true, value: state.text, selectionStart: 0 };
   const submissions = [], compositions = [], sounds = [];
-  bindTypingInput(input, { transitionKeys, state: () => state, submit: advance => submissions.push({ advance: !!advance, text: input.value }), setComposing: value => compositions.push(value), blockClipboard: event => event.preventDefault(), onType: () => sounds.push(input.value) });
+  const controller = bindTypingInput(input, { transitionKeys, state: () => state, submit: advance => submissions.push({ advance: !!advance, text: input.value }), setComposing: value => compositions.push(value), blockClipboard: event => event.preventDefault(), onType: () => sounds.push(input.value) });
   const fire = (type, data = {}) => {
     const event = { code: 'KeyA', key: 'a', repeat: false, preventDefault() { this.prevented = true; }, ...data };
     input['on' + type](event);
     return event;
   };
-  return { input, state, submissions, compositions, sounds, fire, transitionKeys };
+  return { input, state, submissions, compositions, sounds, fire, transitionKeys, controller };
 }
 
 test('한글 조합의 각 입력과 삭제에 효과음을 내고 중복 이벤트·차단 입력은 제외한다', async () => {
@@ -35,6 +35,8 @@ test('키 누름은 전환하지 않고 정답 뒤 추가 입력만 한 번 전�
   assert.equal(f.submissions.length, 0);
   f.fire('compositionstart');
   f.input.value = '완성 문장ㅁ'; f.fire('input', { isComposing: true, inputType: 'insertCompositionText' });
+  assert.equal(f.submissions.length, 0);
+  f.fire('compositionend');
   assert.deepEqual(f.submissions, [{ advance: true, text: '완성 문장' }]);
   for (let i = 0; i < 3; i++) assert.equal(f.fire('keydown', { repeat: true }).prevented, true);
   assert.equal(f.fire('beforeinput', { inputType: 'insertCompositionText' }).prevented, true);
@@ -75,7 +77,7 @@ test('정답의 마지막 한글이 조합 중이어도 Enter 한 번으로 확�
     const f = await fixture();
     f.fire('compositionstart');
     f.fire('keydown', { code: 'Enter', key: 'Enter', ...flags });
-    assert.deepEqual(f.submissions, [{ advance: true, text: '완성 문장' }]);
+    assert.equal(f.submissions.length, 0);
     f.fire('compositionend'); f.fire('input', { isComposing: false });
     f.fire('keyup', { code: 'Enter', key: 'Enter' });
     assert.equal(f.submissions.length, 1);
@@ -162,4 +164,22 @@ test('일반 한글 조합은 정상 제출하고 대기 중 추가 조합으로
   f.fire('compositionstart'); f.input.value = '한ㄱ'; f.fire('input', { isComposing: true }); f.fire('compositionend');
   assert.equal(f.input.value, '한'); assert.equal(f.submissions.length, 3);
   assert.deepEqual(f.submissions.at(-1), { advance: true, text: '한' });
+});
+
+test('같은 입력창을 초기화한 뒤 잔여 조합 이벤트만 무시하고 새 한글은 허용한다', async () => {
+  const f = await fixture();
+  f.fire('compositionstart');
+  const enter = f.fire('keydown', { code: 'Enter', key: 'Enter', isComposing: true });
+  assert.equal(enter.prevented, undefined);
+  assert.equal(f.submissions.length, 0);
+  f.fire('compositionend');
+  assert.equal(f.submissions.length, 1);
+  f.state.waiting = false; f.state.text = ''; f.controller.reset();
+  f.input.value = '이전 문장'; f.fire('input', { inputType: 'insertCompositionText' });
+  assert.equal(f.input.value, '');
+  f.fire('keyup', { code: 'Enter', key: 'Enter' });
+  f.fire('keydown', { code: 'KeyR', key: 'r' }); f.fire('compositionstart');
+  f.input.value = 'ㄱ'; f.fire('input', { isComposing: true });
+  assert.equal(f.submissions.at(-1).text, 'ㄱ');
+  assert.notEqual(f.input.readOnly, true);
 });
