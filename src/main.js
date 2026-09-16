@@ -14,18 +14,20 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const saved = (key, fallback = '') => { try { return localStorage.getItem(key) || fallback; } catch { return fallback; } };
 const save = (key, value) => { try { localStorage.setItem(key, value); } catch {} };
+// UI 100% corresponds to 70% of the original output level.
+const volumeGain = percent => percent / 100 * 0.7;
 let soundEnabled = saved('tb-sound-enabled', 'true') !== 'false';
 let soundVolume = Number(saved('tb-sound-volume', '100'));
 if (!Number.isFinite(soundVolume)) soundVolume = 100;
 soundVolume = Math.max(0, Math.min(200, soundVolume));
-const sounds = createSounds({ enabled: soundEnabled, volume: soundVolume / 100 });
+const sounds = createSounds({ enabled: soundEnabled, volume: volumeGain(soundVolume) });
 window.addEventListener('pointerdown', sounds.unlock, { capture: true });
 window.addEventListener('keydown', sounds.unlock, { capture: true });
 sounds.bindUI(document);
 let musicEnabled = saved('tb-music-enabled', 'true') !== 'false';
 let musicVolume = Number(saved('tb-music-volume', '100'));
 musicVolume = Number.isFinite(musicVolume) ? Math.max(0, Math.min(200, musicVolume)) : 100;
-const music = createMusic({ enabled: musicEnabled, volume: musicVolume / 100 });
+const music = createMusic({ enabled: musicEnabled, volume: volumeGain(musicVolume) });
 window.addEventListener('pointerdown', music.unlock, { capture: true });
 window.addEventListener('keydown', music.unlock, { capture: true });
 document.addEventListener('visibilitychange', () => music.setPaused(document.hidden));
@@ -65,7 +67,7 @@ window.addEventListener('blur', releaseTransitionKey);
 function frame(body) {
   lobbySettings?.destroy(); lobbySettings = null;
   sentenceCache.clear();
-  app.innerHTML = `<header><a class="brand" href="#" aria-label="메인으로">타자 배틀</a></header><main>${body}</main><div class="toast" role="status" id="toast"></div>`;
+  app.innerHTML = `<header><a class="brand" href="#" aria-label="메인으로">타자 배틀</a><span class="brand-credit">- By Dayul</span></header><main>${body}</main><div class="toast" role="status" id="toast"></div>`;
   $('.brand').onclick = e => { e.preventDefault(); if (!room) home(); else toast('경기를 나가려면 나가기 버튼을 눌러주세요.'); };
 }
 function toast(text) { $('#toast').textContent = text; $('#toast').classList.add('show'); setTimeout(() => $('#toast')?.classList.remove('show'), 3500); }
@@ -99,7 +101,7 @@ function addPersonalSettings(container) {
   };
   $('#sound-volume').oninput = event => {
     soundVolume = Number(event.target.value); save('tb-sound-volume', String(soundVolume));
-    $('#sound-level').textContent = `${soundVolume}%`; sounds.setVolume(soundVolume / 100); sounds.unlock();
+    $('#sound-level').textContent = `${soundVolume}%`; sounds.setVolume(volumeGain(soundVolume)); sounds.unlock();
   };
   $('.personal-settings').insertAdjacentHTML('beforeend', `<label for="music-enabled">배경음악</label><select id="music-enabled"><option value="on" ${musicEnabled ? 'selected' : ''}>켜기</option><option value="off" ${!musicEnabled ? 'selected' : ''}>끄기</option></select><label for="music-volume">배경음악 크기 <output id="music-level">${musicVolume}%</output></label><input id="music-volume" type="range" min="0" max="200" step="5" value="${musicVolume}" ${musicEnabled ? '' : 'disabled'}>`);
   $('#music-enabled').onchange = event => {
@@ -109,7 +111,7 @@ function addPersonalSettings(container) {
   };
   $('#music-volume').oninput = event => {
     musicVolume = Number(event.target.value); save('tb-music-volume', String(musicVolume));
-    $('#music-level').textContent = `${musicVolume}%`; music.setVolume(musicVolume / 100);
+    $('#music-level').textContent = `${musicVolume}%`; music.setVolume(volumeGain(musicVolume));
   };
   const audioSettings = document.createElement('div');
   audioSettings.className = 'audio-settings';

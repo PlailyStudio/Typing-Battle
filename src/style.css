@@ -152,3 +152,5 @@ main:has(.opponent){max-width:1600px}
 .lobby-settings :disabled{color:#777;background:#fafafa}
 @media(max-width:600px){.room-settings-grid{grid-template-columns:1fr;gap:0}.room-settings-actions{flex-wrap:wrap}}
 .lobby-layout>.panel,.personal-settings{min-width:0}
+
+.brand-credit{margin-left:8px;font-size:13px;font-weight:400;color:#888;white-space:nowrap}
