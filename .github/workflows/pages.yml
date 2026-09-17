@@ -38,6 +38,8 @@ jobs:
       - name: Build
         run: npm run build
         env:
+          VITE_MULTIPLAYER_BACKEND: ${{ vars.VITE_MULTIPLAYER_BACKEND || 'cloudflare' }}
+          VITE_MULTIPLAYER_URL: ${{ vars.VITE_MULTIPLAYER_URL || 'https://type-battle-server.ddayul.workers.dev' }}
           VITE_NAKAMA_HOST: ${{ vars.VITE_NAKAMA_HOST }}
           VITE_NAKAMA_PORT: '443'
           VITE_NAKAMA_SSL: 'true'

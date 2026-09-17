@@ -6,6 +6,7 @@ import { createSounds } from './sounds.js';
 import { createMusic } from './music.js';
 import { buildInviteUrl, pagePath, parseServerOverride } from './server-url.js';
 import { createLobbySettings } from './lobby-settings.js';
+import { createMultiplayer } from './multiplayer.js';
 
 const R = globalThis.BattleRules;
 const initialParams = new URLSearchParams(location.search);
@@ -222,15 +223,9 @@ async function launch(e) {
   busy = true; $('.launch-button').disabled = true; $('.launch-button').textContent = '서버에 연결 중…';
   let connectionStep = '서버 인증';
   try {
-    const { Client } = await import('@heroiclabs/nakama-js');
-    const ssl = serverOverride?.ssl ?? import.meta.env.VITE_NAKAMA_SSL === 'true';
-    const host = serverOverride?.host || import.meta.env.VITE_NAKAMA_HOST || location.hostname;
-    const port = serverOverride?.port || import.meta.env.VITE_NAKAMA_PORT || '7350';
-    const client = new Client(import.meta.env.VITE_NAKAMA_KEY || 'defaultkey', host, port, ssl);
-    client.timeout = 6000;
-    let device = sessionStorage.getItem('tb-device'); if (!device) { device = crypto.randomUUID(); sessionStorage.setItem('tb-device', device); }
-    session = await client.authenticateDevice(device, true);
-    socket = client.createSocket(ssl, false);
+    const connection = await createMultiplayer(import.meta.env, serverOverride);
+    const client = connection.client;
+    session = connection.session; socket = connection.socket;
     socket.ondisconnect = () => { if (room && mode === 'multi') { error = '서버 연결이 끊겼습니다. 방에 다시 입장해주세요.'; room = null; socket = null; home(); } };
     socket.onmatchdata = event => {
       if (event.op_code === 8) { lobbySettings?.result(JSON.parse(decoder.decode(event.data))); return; }

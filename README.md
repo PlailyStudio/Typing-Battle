@@ -2,6 +2,12 @@
 
 화이트·블랙 스타일의 타자배틀 웹게임. Vite + JavaScript 프런트엔드와 Nakama 서버 런타임 코드로 구성합니다.
 
+## Cloudflare 이전 진행
+
+PC 없이 운영할 수 있도록 **Workers + SQLite Durable Objects 서버**를 추가했습니다. 공개 빌드는 `https://type-battle-server.ddayul.workers.dev`에 연결합니다. 로컬에서는 `npm run worker:dev`와 `npm run dev:cloudflare`를 각각 실행하면 Docker 없이 멀티플레이를 테스트할 수 있습니다. 아래 Nakama 실행 안내는 이전 방식의 로컬 개발용입니다.
+
+계정 준비, 배포, GitHub Pages 전환과 리더보드 확장 범위는 [Cloudflare 이전 단계](docs/cloudflare-migration.md)를 참고하세요.
+
 ## 프런트엔드 실행
 
 폴더 안의 **`게임 실행.bat`를 더블클릭**하면 서버와 브라우저가 열립니다. 실행 창은 게임을 하는 동안 열어두세요. 종료할 때는 실행 창에서 `Ctrl+C`를 누르세요. 이 실행 파일은 프런트엔드용이며, 멀티플레이에는 아래 Nakama 실행이 추가로 필요합니다.

@@ -1,6 +1,26 @@
 {
-  "name": "type-battle", "version": "0.1.0", "private": true, "type": "module",
-  "scripts": { "dev": "vite --host 0.0.0.0", "build": "vite build", "preview": "vite preview --host 0.0.0.0", "test": "node --test tests/*.test.cjs", "server:build": "node scripts/build-server.js" },
-  "dependencies": { "@heroiclabs/nakama-js": "2.8.0" },
-  "devDependencies": { "vite": "8.2.2" }
+  "name": "type-battle",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "test": "node --test tests/*.test.cjs",
+    "server:build": "node scripts/build-server.js",
+    "dev:cloudflare": "vite --host 127.0.0.1 --mode cloudflare",
+    "worker:dev": "wrangler dev --config worker/wrangler.jsonc --ip 127.0.0.1 --port 8787",
+    "worker:check": "wrangler deploy --config worker/wrangler.jsonc --dry-run --outdir .local/worker-build",
+    "worker:login": "wrangler login",
+    "worker:deploy": "wrangler deploy --config worker/wrangler.jsonc",
+    "test:cloudflare": "node scripts/smoke-cloudflare.js"
+  },
+  "dependencies": {
+    "@heroiclabs/nakama-js": "2.8.0"
+  },
+  "devDependencies": {
+    "vite": "8.2.2",
+    "wrangler": "^4.133.0"
+  }
 }
