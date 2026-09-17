@@ -229,3 +229,60 @@ test('완주 입력 이벤트에서 고해상도 시간을 확정하고 100ms �
     assert.ok(f.get('#results').html.includes(((finish - 9000) / 1000).toFixed(2) + '초'));
   }
 });
+
+
+test('참가자는 결과에서 먼저 대기실로 이동하고 방장 복귀까지 준비를 기다린다', () => {
+  const f = ui();
+  f.run(`
+    mode = 'multi'; session = { user_id: 'me' };
+    room.host = 'other'; room.phase = 'result';
+    room.players.push(R.player('other', '방장'));
+    let sentOps = [], arenaCalls = 0;
+    send = op => sentOps.push(op);
+    arena = () => { arenaCalls++; displayedPhase = room.phase; refresh(); };
+    results();
+  `);
+  assert.match(f.get('#results').html, /id="again">대기실로 돌아가기/);
+  f.get('#again').onclick();
+  assert.equal(f.run('arenaCalls'), 1);
+  assert.equal(f.run('room.phase'), 'result');
+  assert.equal(f.run('sentOps.length'), 0);
+  assert.equal(f.run('waitingForHost()'), true);
+  assert.match(f.get('#lobby-action').html, /방장의 대기실 복귀를 기다리는 중/);
+  const resultWrites = f.get('#results').htmlWrites;
+  f.run('refresh(); refresh()');
+  assert.equal(f.get('#results').htmlWrites, resultWrites);
+  f.run("room.phase = 'lobby'; refresh()");
+  assert.equal(f.run('waitingForHost()'), false);
+  assert.match(f.get('#lobby-action').html, /id="ready" >준비 완료/);
+  f.get('#ready').onclick();
+  assert.equal(f.run('sentOps[0]'), 2);
+});
+
+test('먼저 대기실로 돌아온 참가자가 방장 권한을 받으면 대기실을 열 수 있다', () => {
+  const f = ui();
+  f.run(`
+    mode = 'multi'; session = { user_id: 'me' }; room.phase = 'result';
+    returnedToLobby = true;
+    let sentOps = []; send = op => sentOps.push(op);
+    const departed = R.player('other', '이전 방장'); departed.left = true;
+    room.players.push(departed); room.max = 2;
+    refresh();
+  `);
+  assert.match(f.get('#lobby-action').html, /방장 권한을 넘겨받았습니다/);
+  assert.equal(f.get('#count').textContent, '1 / 2');
+  assert.doesNotMatch(f.get('#players').html, /이전 방장/);
+  f.get('#resume-lobby').onclick();
+  assert.equal(f.run('sentOps[0]'), 5);
+});
+
+test('방장의 결과 화면 복귀 버튼은 기존 대기실 전환 요청을 보낸다', () => {
+  const f = ui();
+  f.run(`
+    mode = 'multi'; session = { user_id: 'me' }; room.phase = 'result';
+    let sentOps = []; send = op => sentOps.push(op); results();
+  `);
+  f.get('#again').onclick();
+  assert.equal(f.run('sentOps[0]'), 5);
+  assert.equal(f.run('returnedToLobby'), false);
+});

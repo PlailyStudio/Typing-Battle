@@ -40,6 +40,8 @@ let gameMode = 'race', duration = 60;
 let sentenceSource = 'default', customText = '', sentenceOrder = 'sequential';
 let nickname = '', error = '', busy = false;
 let finalizingInput = false;
+let returnedToLobby = false;
+function waitingForHost() { return mode === 'multi' && room?.phase === 'result' && returnedToLobby; }
 let typingController = null;
 const clockEpoch = Date.now() - performance.now();
 const preciseNow = () => clockEpoch + performance.now();
@@ -235,6 +237,7 @@ async function launch(e) {
       const mine = next.players.find(p => p.id === session.user_id);
       if (mine && (!self || next.phase === 'lobby' || next.phase === 'result' || mine.seq >= self.seq)) self = { ...mine };
       if (next.phase === 'lobby') { resultSaved = false; composing = false; seq = 0; }
+      if (next.phase !== 'result') returnedToLobby = false;
       room = next;
       roomCode = next.code || roomCode;
       if (room.phase !== displayedPhase) arena(); else refresh();
@@ -246,7 +249,7 @@ async function launch(e) {
       ? (await client.rpc(session, 'create_battle', { title, max, language, gameMode, sentenceOrder, duration: gameMode === 'race' ? undefined : duration, ...(sentenceSource === 'custom' ? { customText } : {}) })).payload
       : (await client.rpc(session, 'resolve_battle', { code })).payload;
     matchId = resolved.matchId; roomCode = resolved.code;
-    mode = 'multi'; self = null; seq = 0; displayedPhase = ''; resultSaved = false;
+    mode = 'multi'; returnedToLobby = false; self = null; seq = 0; displayedPhase = ''; resultSaved = false;
     connectionStep = '방 입장';
     const joined = await socket.joinMatch(matchId, undefined, { name: nickname });
     matchId = joined.match_id;
@@ -264,7 +267,7 @@ async function launch(e) {
   } finally { busy = false; if (!room) home(); }
 }
 function startSolo() {
-  mode = 'single'; offset = 0; seq = 0; resultSaved = false; composing = false;
+  mode = 'single'; returnedToLobby = false; offset = 0; seq = 0; resultSaved = false; composing = false;
   self = R.player('me', nickname);
   const customSentences = sentenceSource === 'custom' ? R.parseCustomSentences(customText) : null;
   const startAt = preciseNow() + 3000;
@@ -302,7 +305,7 @@ function mini(p) { return `<article class="opponent ${p.left ? 'disconnected' : 
 function arena() {
   transitionKeys.key = null; transitionKeys.blockInput = false;
   displayedPhase = room.phase;
-  const isLobby = room.phase === 'lobby', isResult = room.phase === 'result';
+  const isLobby = room.phase === 'lobby' || waitingForHost(), isResult = !isLobby && room.phase === 'result';
   frame(`<section class="arena"><div class="arena-title"><div><h2>${esc(room.title)}</h2><span class="room-language" id="room-language">${room.customSentences ? '직접 입력' : room.language === 'en' ? '영어' : '한국어'}</span></div><button class="ghost" id="leave">나가기</button></div>${isLobby ? `<div class="lobby-layout"><section class="panel"><div class="section-top"><span>대기실</span><span id="count"></span></div><div class="lobby-profile"><label for="lobby-nickname">닉네임</label><div class="lobby-profile-row"><input id="lobby-nickname" placeholder="닉네임을 입력해주세요." maxlength="12" autocomplete="off"></div></div><div id="players"></div><div id="lobby-action"></div></section><aside class="panel invite"><label for="share-code">참가 코드</label><input id="share-code" readonly value="${esc(room.code || roomCode)}"><label for="invite-link">초대 링크</label><input id="invite-link" readonly value="${esc(inviteUrl(room.code || roomCode))}"><button class="primary" id="copy">초대 링크 복사</button></aside></div>` : isResult ? '<div id="results"></div>' : `<div id="opponents" class="opponents"></div><div class="match-strip"><span id="phase-label">경기 준비</span><div><strong id="timer">${isRace() ? 0 : room.duration || 60}</strong><span id="timer-label">초 남음</span></div><span id="rank">—</span></div><section class="typing-panel"><div class="typing-head"><span>${esc(nickname)}</span><span id="line-number">01 / ${matchSentences().length}</span></div><div id="target" class="target" lang="${room.language === 'en' ? 'en' : 'ko'}"></div><div id="next-preview" class="next-preview"><span>다음</span><p id="next-sentence" lang="${room.language === 'en' ? 'en' : 'ko'}"></p></div><label for="typing" class="sr-only">위 문장을 입력하세요</label><input id="typing" class="typing-input" lang="${room.language === 'en' ? 'en' : 'ko'}" placeholder="잠시 후 시작합니다" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" maxlength="160"><button type="button" class="primary next-sentence-button" id="next-button" hidden>다음 문장</button><div class="typing-footer"><span id="input-hint">문장을 정확하게 입력한 뒤 Enter를 누르거나 문자·공백을 추가로 입력해 완성을 확정해주세요.</span><div><span><b id="cpm">0</b> 타/분</span><span><b id="accuracy">100</b> % 정확도</span></div></div></section>`}</section>`);
   if (isRace() && !isLobby && !isResult) $('.match-strip').insertAdjacentHTML('beforeend', '<div id="self-progress"></div>');
   $('#leave').onclick = leave;
@@ -320,10 +323,12 @@ function arena() {
   }
   if (isLobby) {
     $('.lobby-layout').insertAdjacentHTML('beforeend', '<section class="panel lobby-settings" id="lobby-settings"></section>');
-    lobbySettings = createLobbySettings($('#lobby-settings'), { rules: R, userId: session?.user_id, send, notify: toast });
+    if (!waitingForHost()) lobbySettings = createLobbySettings($('#lobby-settings'), { rules: R, userId: session?.user_id, send, notify: toast });
+    else $('#lobby-settings').hidden = true;
     addPersonalSettings($('.lobby-layout > .panel'));
     const nameInput = $('#lobby-nickname');
     nameInput.value = self?.name || nickname;
+    nameInput.disabled = waitingForHost();
     let lastSentName = nameInput.value;
     const applyName = (fillEmpty = false) => {
       if (!nameInput.isConnected || room?.phase !== 'lobby') return;
@@ -400,17 +405,25 @@ function submitInput(advance = false) {
 function refresh() {
   if (!room) return;
   sounds.observe(room, now());
-  music.setScene(room.phase);
+  music.setScene(waitingForHost() ? 'lobby' : room.phase);
   const roomLanguage = room.customSentences ? `직접 입력 · ${room.customSentences.length}문장 · ${room.sentenceOrder === 'sequential' ? '입력 순서대로' : '무작위'}` : room.language === 'en' ? '영어' : '한국어';
   setText($('#room-language'), roomLanguage + (isRace() ? ' · 완주' : ` · ${room.duration || 60}초`));
-  if (room.phase === 'lobby') {
+  if (room.phase === 'lobby' || waitingForHost()) {
     setText($('.arena-title h2'), room.title);
     lobbySettings?.update(room);
     $('#share-code').value = room.code || roomCode;
     $('#invite-link').value = inviteUrl(room.code || roomCode);
-    setText($('#count'), `${room.players.length} / ${room.max}`);
-    setHTML($('#players'), room.players.map(p => `<div class="lobby-player"><span class="avatar">${esc(p.name.slice(0, 1))}</span><strong>${esc(p.name)}</strong><span>${p.id === room.host ? '방장' : p.ready ? '준비 완료' : '준비 중'}</span></div>`).join(''));
+    const players = room.players.filter(p => !p.left);
+    setText($('#count'), `${players.length} / ${room.max}`);
+    setHTML($('#players'), players.map(p => `<div class="lobby-player"><span class="avatar">${esc(p.name.slice(0, 1))}</span><strong>${esc(p.name)}</strong><span>${p.id === room.host ? '방장' : waitingForHost() ? p.id === self?.id ? '대기 중' : '경기 종료' : p.ready ? '준비 완료' : '준비 중'}</span></div>`).join(''));
     const host = room.host === session?.user_id;
+    if (waitingForHost()) {
+      setHTML($('#lobby-action'), host
+        ? '<p role="status">방장이 나가 방장 권한을 넘겨받았습니다.</p><button class="primary" id="resume-lobby">대기실 열기</button>'
+        : '<p role="status">방장의 대기실 복귀를 기다리는 중입니다.</p><button class="primary" disabled>준비 완료</button>');
+      if (host) $('#resume-lobby').onclick = () => send(5);
+      return;
+    }
     setHTML($('#lobby-action'), `<button class="primary" id="ready" ${host && (room.players.length < 2 || room.players.some(p => p.id !== room.host && !p.ready)) ? 'disabled' : ''}>${host ? '경기 시작하기' : self?.ready ? '준비 취소' : '준비 완료'}</button>`);
     $('#ready').onclick = () => {
       if (host && lobbySettings?.hasUnsavedChanges()) { toast('변경한 방 설정을 저장하거나 취소해주세요.'); return; }
@@ -472,11 +485,16 @@ function results() {
   const players = room.players.slice().sort(comparePlayers);
   if (!resultSaved && self) { const bestKey = room.language === 'en' ? 'tb-best-en-v1' : 'tb-best-jamo-v1'; best = Math.max(Number(saved(bestKey, '0')), cpm(self)); save(bestKey, String(best)); resultSaved = true; }
   let lastRank = 1;
-  setHTML($('#results'), `<section class="result-panel"><h1>결과</h1>${isRace() ? `<p class="finish-time">완주 시간 <strong>${self?.finished ? elapsed(self).toFixed(2) + '초' : '미완주'}</strong></p>` : `<p class="finish-time">${room.duration || 60}초 기록 <strong>${self ? R.strokeProgress(self, matchSentences()) : 0}타</strong></p>`}<div class="result-metrics"><div><span>나의 타수</span><strong>${self ? cpm(self) : 0}<small>타/분</small></strong></div><div><span>정확도</span><strong>${self ? R.accuracy(self) : 100}<small>%</small></strong></div><div><span>완성한 문장</span><strong>${self?.line || 0}<small>${isRace() ? '/ ' + matchSentences().length : '개'}</small></strong></div></div><div class="result-table">${players.map((p, i) => { if (i && comparePlayers(players[i - 1], p) !== 0) lastRank = i + 1; return `<div><span class="result-rank">${String(lastRank).padStart(2, '0')}</span><strong>${esc(p.name)} ${p.id === self?.id ? '<small>나</small>' : ''}</strong><span>${isRace() ? p.finished ? elapsed(p).toFixed(2) + '초' : '미완주' : R.strokeProgress(p, matchSentences()) + '타'}</span><span>${p.left ? '이탈' : p.finished ? '완료' : '시간 종료'}</span></div>`; }).join('')}</div><div class="result-actions"><button class="primary" id="again" ${mode === 'multi' && room.host !== session?.user_id ? 'disabled' : ''}>${mode === 'single' ? '다시 시작' : room.host === session?.user_id ? '대기실로 돌아가기' : '방장의 대기실 복귀를 기다리는 중'}</button><button class="ghost" id="result-home">메인으로</button></div></section>`);
-  $('#again').onclick = () => mode === 'single' ? startSolo() : send(5);
+  setHTML($('#results'), `<section class="result-panel"><h1>결과</h1>${isRace() ? `<p class="finish-time">완주 시간 <strong>${self?.finished ? elapsed(self).toFixed(2) + '초' : '미완주'}</strong></p>` : `<p class="finish-time">${room.duration || 60}초 기록 <strong>${self ? R.strokeProgress(self, matchSentences()) : 0}타</strong></p>`}<div class="result-metrics"><div><span>나의 타수</span><strong>${self ? cpm(self) : 0}<small>타/분</small></strong></div><div><span>정확도</span><strong>${self ? R.accuracy(self) : 100}<small>%</small></strong></div><div><span>완성한 문장</span><strong>${self?.line || 0}<small>${isRace() ? '/ ' + matchSentences().length : '개'}</small></strong></div></div><div class="result-table">${players.map((p, i) => { if (i && comparePlayers(players[i - 1], p) !== 0) lastRank = i + 1; return `<div><span class="result-rank">${String(lastRank).padStart(2, '0')}</span><strong>${esc(p.name)} ${p.id === self?.id ? '<small>나</small>' : ''}</strong><span>${isRace() ? p.finished ? elapsed(p).toFixed(2) + '초' : '미완주' : R.strokeProgress(p, matchSentences()) + '타'}</span><span>${p.left ? '이탈' : p.finished ? '완료' : '시간 종료'}</span></div>`; }).join('')}</div><div class="result-actions"><button class="primary" id="again">${mode === 'single' ? '다시 시작' : '대기실로 돌아가기'}</button><button class="ghost" id="result-home">메인으로</button></div></section>`);
+  $('#again').onclick = () => {
+    if (mode === 'single') return startSolo();
+    if (room.host === session?.user_id) return send(5);
+    returnedToLobby = true;
+    arena();
+  };
   $('#result-home').onclick = leave;
 }
-async function leave() { const old = socket; room = null; self = null; socket = null; displayedPhase = ''; if (old) { old.onmatchdata = () => {}; old.ondisconnect = () => {}; try { await old.leaveMatch(matchId); } catch {} old.disconnect(); } error = ''; home(); }
+async function leave() { returnedToLobby = false; const old = socket; room = null; self = null; socket = null; displayedPhase = ''; if (old) { old.onmatchdata = () => {}; old.ondisconnect = () => {}; try { await old.leaveMatch(matchId); } catch {} old.disconnect(); } error = ''; home(); }
 function refreshTimer() {
   const timer = $('#timer');
   if (!timer || !room || !['countdown', 'playing'].includes(room.phase)) return;
