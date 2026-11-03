@@ -238,9 +238,8 @@ async function launch(e) {
       if (mine && (!self || next.phase === 'lobby' || next.phase === 'result' || mine.seq >= self.seq)) self = { ...mine };
       if (next.phase === 'lobby') { resultSaved = false; composing = false; seq = 0; }
       if (next.phase !== 'result') returnedToLobby = false;
-      room = next;
       roomCode = next.code || roomCode;
-      if (room.phase !== displayedPhase) arena(); else refresh();
+      updateArena(next);
     };
     connectionStep = '실시간 연결';
     await socket.connect(session, true);
@@ -362,6 +361,17 @@ function arena() {
   }
   refresh();
 }
+function updateArena(next = room) {
+  const alreadyPlaying = room?.phase === 'playing' && room.startAt === next.startAt;
+  if (next.phase === 'countdown' && (alreadyPlaying || now() >= next.startAt)) next.phase = 'playing';
+  room = next;
+  if (mode === 'single' && room.phase === 'playing' && (expired() || (isRace() && self.finished))) room.phase = 'result';
+  if (displayedPhase === 'countdown' && room.phase === 'playing') {
+    $('.countdown-overlay')?.remove();
+    displayedPhase = room.phase;
+  }
+  if (displayedPhase !== room.phase) arena(); else refresh();
+}
 function blockClipboard(e) { e.preventDefault(); toast('타자 영역에서는 복사·붙여넣기를 사용할 수 없습니다. 직접 입력해주세요.'); }
 function attachTypingInput(input) {
   typingController = bindTypingInput(input, {
@@ -438,7 +448,7 @@ function refresh() {
   document.querySelectorAll('.mini-speed').forEach((node, i) => setText(node, cpm(opponents[i])));
   const countdown = Math.max(0, Math.ceil((room.startAt - now()) / 1000));
   const countdownNumber = $('#countdown-number');
-  if (countdownNumber && countdownNumber.textContent !== String(countdown || '시작!')) countdownNumber.textContent = String(countdown || '시작!');
+  if (countdownNumber && countdown > 0) setText(countdownNumber, countdown);
   refreshTimer();
   setText($('#timer-label'), room.phase === 'countdown' ? '초 후 시작' : isRace() ? '초 경과' : '초 남음');
   setText($('#phase-label'), room.phase === 'countdown' ? '곧 시작합니다' : self.finished ? '입력 완료 · 결과 대기' : '진행 중');
@@ -503,17 +513,14 @@ function refreshTimer() {
     : (isRace() ? elapsed(self) : Math.max(0, (room.endAt - now()) / 1000)).toFixed(2));
 }
 function animateTimer() {
+  if (room?.phase === 'countdown' && now() >= room.startAt) updateArena();
   refreshTimer();
   requestAnimationFrame(animateTimer);
 }
 requestAnimationFrame(animateTimer);
 setInterval(() => {
   if (!room || room.phase === 'lobby' || room.phase === 'result') return;
-  if (mode === 'single') {
-    if (room.phase === 'countdown' && now() >= room.startAt) room.phase = 'playing';
-    if (room.phase === 'playing' && (expired() || (isRace() && self.finished))) room.phase = 'result';
-  }
-  if (displayedPhase !== room.phase) arena(); else refresh();
+  updateArena();
 }, 100);
 const initialInviteCode = initialParams.get('room')?.trim();
 if (/^\d{6}$/.test(initialInviteCode || '')) {

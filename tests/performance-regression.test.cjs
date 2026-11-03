@@ -114,6 +114,57 @@ test('타이머는 전체 화면 갱신 없이 0.01초 차이를 표시한다', 
   assert.equal(f.get('#timer').textContent, '1.76');
 });
 
+test('싱글·멀티 카운트다운 종료 즉시 같은 입력창에서 입력을 받고 늦은 서버 상태에도 유지한다', () => {
+  for (const mode of ['single', 'multi']) {
+    for (const gameMode of ['race', 'timed']) {
+      const f = ui(), input = f.get('#typing'), overlay = f.get('.countdown-overlay');
+      let removals = 0, focuses = 0;
+      overlay.remove = () => { removals++; };
+      input.focus = () => { focuses++; f.context.document.activeElement = input; };
+      input.disabled = true; input.value = ''; input.selectionStart = 0; input.isConnected = true;
+      f.run(`
+        mode = '${mode}'; room.gameMode = '${gameMode}';
+        room.phase = displayedPhase = 'countdown'; room.startAt = 13000; room.endAt = 73000;
+        arena = () => { throw Error('시작할 때 입력창을 다시 만들면 안 됨'); };
+        send = () => true;
+        attachTypingInput($('#typing'));
+      `);
+      for (const [time, count] of [[10000, '3'], [11000, '2'], [12000, '1'], [12999, '1']]) {
+        f.context.performance.now = () => time;
+        f.run('updateArena(); animateTimer()');
+        assert.equal(f.run('room.phase'), 'countdown');
+        assert.equal(f.get('#countdown-number').textContent, count);
+        assert.equal(input.disabled, true);
+        assert.equal(removals, 0);
+        assert.equal(focuses, 0);
+      }
+      f.context.performance.now = () => 13000;
+      f.run('animateTimer()');
+      assert.equal(f.run('room.phase'), 'playing');
+      assert.equal(f.run('displayedPhase'), 'playing');
+      assert.equal(input.disabled, false);
+      assert.equal(f.context.document.activeElement, input);
+      assert.equal(removals, 1);
+      assert.equal(focuses, 1);
+      assert.equal(f.get('#timer').textContent, gameMode === 'race' ? '0.00' : '60.00');
+      assert.equal(f.get('#phase-label').textContent, '진행 중');
+      input.value = '값'; input.selectionStart = 1;
+      input.oninput({ inputType: 'insertText', isComposing: false });
+      assert.equal(f.run('self.text'), '값');
+      if (mode === 'multi') {
+        f.context.performance.now = () => 13150;
+        f.run("offset = -250; updateArena({ ...room, phase: 'countdown' })");
+        assert.equal(f.run('room.phase'), 'playing');
+        assert.equal(input.disabled, false);
+        assert.equal(input.value, '값');
+        assert.equal(f.context.document.activeElement, input);
+        assert.equal(removals, 1);
+        assert.equal(focuses, 1);
+      }
+    }
+  }
+});
+
 test('자동 전환은 한글 조합 종료를 기다리지 않고 같은 입력창을 비우며 잔여 이벤트를 차단한다', () => {
   const f = ui(), input = f.get('#typing');
   input.value = ''; input.isConnected = true; input.selectionStart = 0;
